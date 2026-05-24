@@ -17,10 +17,12 @@ async function poll() {
 function matLine(items, cargos) {
   const all = [...(items || []), ...(cargos || [])];
   if (all.length === 0) return '';
+  const nameMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
   return '<div style="margin-top:2px">' +
-    all.map(m =>
-      `<span class="mat">${m.item_type === 'cargo' ? '📦' : ''}#${m.item_id} ×${m.quantity}</span>`
-    ).join('') + '</div>';
+    all.map(m => {
+      const name = nameMap[m.item_id] || `#${m.item_id}`;
+      return `<span class="mat">${esc(name)} ×${m.quantity}</span>`;
+    }).join('') + '</div>';
 }
 
 function render() {

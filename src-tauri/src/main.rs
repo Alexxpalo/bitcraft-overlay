@@ -1,14 +1,25 @@
 // Prevents console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::OnceLock;
+
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent("bitcraft-overlay")
+            .build()
+            .expect("failed to build HTTP client")
+    })
+}
+
 /// Generic GET proxy to the Bitjita REST API, run server-side to avoid the
 /// CORS restriction that blocks requests from the WebView.
 #[tauri::command]
 async fn bitjita(path: String) -> Result<serde_json::Value, String> {
     let url = format!("https://bitjita.com/api/{path}");
-    let resp = reqwest::Client::new()
+    let resp = http_client()
         .get(&url)
-        .header("User-Agent", "bitcraft-overlay")
         .send()
         .await
         .map_err(|e| e.to_string())?;

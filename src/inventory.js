@@ -26,6 +26,9 @@ async function poll() {
     allRows = Object.entries(totals)
       .map(([id, qty]) => ({ name: itemsMap[id] || `#${id}`, qty }));
 
+    // Share items map with other panels (e.g. construction material names)
+    localStorage.setItem('bc-items-map', JSON.stringify(itemsMap));
+
     setStatus('● live', 'ok');
   } catch(e) {
     setStatus('error: ' + e, 'err');

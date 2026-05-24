@@ -26,16 +26,34 @@ async function bitjita(path) {
 
 // Wire up the standard window chrome: drag bar, close, pin, optional collapse.
 function initChrome() {
+  const win = T.window.getCurrentWindow();
+
+  // Save position to localStorage whenever the window is moved (debounced).
+  let _posTimer;
+  win.listen('tauri://move', () => {
+    clearTimeout(_posTimer);
+    _posTimer = setTimeout(async () => {
+      try {
+        const pos = await win.outerPosition();
+        const sf  = await win.scaleFactor();
+        localStorage.setItem('bc-pos-' + win.label, JSON.stringify({
+          x: Math.round(pos.x / sf),
+          y: Math.round(pos.y / sf),
+        }));
+      } catch(e) {}
+    }, 400);
+  });
+
   const bar = document.getElementById('drag-bar');
   if (bar) bar.addEventListener('mousedown', (e) => {
     if (e.button === 0 && e.target.closest('.win-btn') === null) {
-      T.window.getCurrentWindow().startDragging();
+      win.startDragging();
     }
   });
   const close = document.getElementById('close-btn');
-  if (close) close.addEventListener('click', () => T.window.getCurrentWindow().close());
+  if (close) close.addEventListener('click', () => win.close());
   const min = document.getElementById('min-btn');
-  if (min) min.addEventListener('click', () => T.window.getCurrentWindow().minimize());
+  if (min) min.addEventListener('click', () => win.minimize());
   const collapse = document.getElementById('collapse-btn');
   if (collapse) collapse.addEventListener('click', () => toggleCollapse(collapse));
 }
@@ -68,7 +86,8 @@ async function openPanel(label, url, opts = {}) {
   const all = await T.webviewWindow.getAllWebviewWindows();
   const existing = all.find(w => w.label === label);
   if (existing) { existing.setFocus(); return; }
-  new T.webviewWindow.WebviewWindow(label, {
+  const saved = JSON.parse(localStorage.getItem('bc-pos-' + label) || 'null');
+  const winOpts = {
     url,
     width:       opts.width  ?? 360,
     height:      opts.height ?? 480,
@@ -79,7 +98,9 @@ async function openPanel(label, url, opts = {}) {
     resizable:   true,
     skipTaskbar: true,
     title:       opts.title ?? label,
-  });
+  };
+  if (saved) { winOpts.x = saved.x; winOpts.y = saved.y; }
+  new T.webviewWindow.WebviewWindow(label, winOpts);
 }
 
 // Selected settlement, shared across all windows via localStorage.
