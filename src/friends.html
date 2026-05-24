@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Friends</title>
+  <link rel="stylesheet" href="common.css">
+</head>
+<body>
+  <div id="drag-bar">
+    <span class="logo">FRIENDS</span>
+    <span class="spacer"></span>
+    <button class="win-btn pin active" id="pin-btn" title="Always on top">📌</button>
+    <button class="win-btn close" id="close-btn" title="Close">✕</button>
+  </div>
+  <div class="body">
+    <div id="status" class="status">…</div>
+    <div class="addrow">
+      <input id="name-input" placeholder="Friend's username..." />
+      <button class="act" id="add-btn">Watch</button>
+    </div>
+    <div id="list"></div>
+  </div>
+  <script src="common.js"></script>
+  <script src="friends.js"></script>
+</body>
+</html>

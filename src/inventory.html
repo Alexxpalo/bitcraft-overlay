@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Inventory</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    .inv-ctrl { display: flex; flex-direction: column; gap: 4px; margin-bottom: 5px; }
+    .sort-btns { display: flex; gap: 3px; }
+    .sort-btn {
+      flex: 1; padding: 2px 0; background: #0d1520; border: 1px solid #1a2535;
+      border-radius: 3px; color: #3a5070; font-size: 10px; cursor: pointer;
+    }
+    .sort-btn:hover  { border-color: #3a7bd5; color: #90b8f0; }
+    .sort-btn.active { border-color: #3a7bd5; color: #3a7bd5; background: #0d1e35; }
+    .qty { font-size: 11px; color: #90b8f0; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+  <div id="drag-bar">
+    <span class="status-dot" id="status-dot" title="…"></span>
+    <span class="logo">INVENTORY</span>
+    <span class="spacer"></span>
+    <button class="win-btn" id="collapse-btn" title="Collapse/expand">▲</button>
+    <button class="win-btn" id="min-btn" title="Minimize">—</button>
+    <button class="win-btn close" id="close-btn" title="Close">✕</button>
+  </div>
+  <div class="body collapsible">
+    <div class="inv-ctrl">
+      <input id="inv-search" placeholder="Search items…" autocomplete="off" />
+      <div class="sort-btns">
+        <button class="sort-btn active" data-sort="name-asc">A→Z</button>
+        <button class="sort-btn" data-sort="name-desc">Z→A</button>
+        <button class="sort-btn" data-sort="qty-desc">Qty ↓</button>
+        <button class="sort-btn" data-sort="qty-asc">Qty ↑</button>
+      </div>
+    </div>
+    <div id="list"></div>
+  </div>
+  <script src="common.js"></script>
+  <script src="inventory.js"></script>
+</body>
+</html>

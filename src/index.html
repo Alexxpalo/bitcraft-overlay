@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BitCraft Overlay</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    .panel-btns { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+    .panel-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; background: #0d1520; border: 1px solid #1a2535;
+      border-radius: 4px; color: #c8d4e0; font-size: 11px; cursor: pointer; text-align: left; width: 100%;
+    }
+    .panel-btn:hover { background: #111c2e; border-color: #3a7bd5; }
+    .panel-btn .ic  { font-size: 13px; }
+    .panel-btn .lbl { flex: 1; font-weight: 600; }
+    .panel-btn .sub { font-size: 10px; color: #3a5070; font-weight: 400; display: block; }
+
+    .settlement-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .settlement-row .name { font-weight: 600; flex: 1; color: #c8d4e0; font-size: 12px; }
+    .btn-change {
+      background: none; border: 1px solid #1a2535; border-radius: 3px;
+      color: #3a5070; font-size: 10px; padding: 2px 6px; cursor: pointer;
+    }
+    .btn-change:hover { border-color: #c0392b; color: #c0392b; }
+  </style>
+</head>
+<body>
+  <div id="drag-bar">
+    <span class="logo">BITCRAFT</span>
+    <span class="spacer"></span>
+    <button class="win-btn" id="collapse-btn" title="Collapse/expand">▲</button>
+    <button class="win-btn" id="min-btn" title="Minimize">—</button>
+    <button class="win-btn close" id="close-btn" title="Close">✕</button>
+  </div>
+
+  <div class="collapsible">
+  <!-- Setup: pick a settlement -->
+  <div class="body" id="view-setup">
+    <h2>Select Settlement</h2>
+    <div class="addrow">
+      <input id="search-input" placeholder="Settlement name..." autofocus />
+      <button class="act" id="search-btn">Find</button>
+    </div>
+    <div id="results"></div>
+  </div>
+
+  <!-- Main: panels -->
+  <div class="body" id="view-main" style="display:none">
+    <div class="settlement-row">
+      <span class="name" id="settlement-name"></span>
+      <button class="btn-change" id="change-btn">change</button>
+    </div>
+    <div class="panel-btns">
+      <button class="panel-btn" id="open-members">
+        <span class="ic">👥</span>
+        <span class="lbl">Members<span class="sub">Who's online</span></span>
+      </button>
+      <button class="panel-btn" id="open-builds">
+        <span class="ic">🏗️</span>
+        <span class="lbl">Builds<span class="sub">Construction progress</span></span>
+      </button>
+      <button class="panel-btn" id="open-crafts">
+        <span class="ic">⚒️</span>
+        <span class="lbl">Crafts<span class="sub">Active crafting jobs</span></span>
+      </button>
+      <button class="panel-btn" id="open-inventory">
+        <span class="ic">📦</span>
+        <span class="lbl">Inventory<span class="sub">Settlement storage</span></span>
+      </button>
+    </div>
+  </div>
+  </div><!-- /.collapsible -->
+
+  <script src="common.js"></script>
+  <script>
+    initChrome();
+    startPollClock(30000);
+    let settlement = getSettlement();
+
+    function showView(v) {
+      document.getElementById('view-setup').style.display = v === 'setup' ? '' : 'none';
+      document.getElementById('view-main').style.display  = v === 'main'  ? '' : 'none';
+    }
+
+    async function search() {
+      const q = document.getElementById('search-input').value.trim();
+      if (q.length < 2) return;
+      try {
+        const j = await bitjita(`claims?q=${encodeURIComponent(q)}&limit=8`);
+        const res = document.getElementById('results');
+        res.innerHTML = (j.claims || []).map(c =>
+          `<div class="row"><div class="row-head">
+            <span class="name">${esc(c.name)}</span>
+            <button class="act sel" data-id="${c.entityId}" data-name="${esc(c.name)}">Select</button>
+          </div></div>`
+        ).join('') || '<div class="hint">No settlements found.</div>';
+        res.querySelectorAll('.sel').forEach(b =>
+          b.addEventListener('click', () => pick(b.dataset.id, b.dataset.name)));
+      } catch(e) { /* ignore */ }
+    }
+
+    async function pick(id, name) {
+      setSettlement({ id, name });
+      settlement = { id, name };
+      document.getElementById('settlement-name').textContent = name;
+      showView('main');
+      openPanel('members',      'members.html',      { title: 'Members',    width: 220, height: 80 });
+      openPanel('construction', 'construction.html', { title: 'Builds',     width: 240, height: 80 });
+      openPanel('crafts',       'crafts.html',       { title: 'Crafts',     width: 240, height: 80 });
+      openPanel('inventory',    'inventory.html',    { title: 'Inventory',  width: 260, height: 80 });
+    }
+
+    function changeSettlement() {
+      setSettlement(null);
+      settlement = null;
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('search-input').value = '';
+      showView('setup');
+    }
+
+    document.getElementById('search-btn').addEventListener('click', search);
+    document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+    document.getElementById('change-btn').addEventListener('click', changeSettlement);
+    document.getElementById('open-members').addEventListener('click', () =>
+      openPanel('members', 'members.html', { title: 'Members', width: 240, height: 300 }));
+    document.getElementById('open-builds').addEventListener('click', () =>
+      openPanel('construction', 'construction.html', { title: 'Builds', width: 260, height: 280 }));
+    document.getElementById('open-crafts').addEventListener('click', () =>
+      openPanel('crafts', 'crafts.html', { title: 'Crafts', width: 260, height: 240 }));
+    document.getElementById('open-inventory').addEventListener('click', () =>
+      openPanel('inventory', 'inventory.html', { title: 'Inventory', width: 260, height: 400 }));
+
+    if (settlement) {
+      document.getElementById('settlement-name').textContent = settlement.name;
+      showView('main');
+    } else {
+      showView('setup');
+    }
+  </script>
+</body>
+</html>

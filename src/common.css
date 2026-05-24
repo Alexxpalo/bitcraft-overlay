@@ -1,0 +1,106 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  font: 12px/1.4 "Segoe UI", sans-serif;
+  background: #0e1117; color: #c8d4e0;
+  overflow: hidden; user-select: none;
+}
+
+/* ── drag bar ─────────────────────────────────────────────────────── */
+#drag-bar {
+  height: 26px; background: #080b10; display: flex; align-items: center;
+  padding: 0 6px 0 8px; cursor: grab; border-bottom: 1px solid #181f2c;
+  gap: 4px;
+}
+#drag-bar .logo {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  color: #3a7bd5; pointer-events: none; flex-shrink: 0;
+}
+#drag-bar .spacer { flex: 1; }
+#drag-bar .bar-info {
+  font-size: 10px; color: #4a5a70; pointer-events: none;
+}
+
+/* tiny live/error dot in drag bar */
+.status-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #2a3347; flex-shrink: 0; pointer-events: none;
+}
+.status-dot.ok  { background: #2ecf6a; box-shadow: 0 0 4px #2ecf6a66; }
+.status-dot.err { background: #e05252; }
+
+.win-btn {
+  background: none; border: none; color: #3a4e66;
+  font-size: 11px; cursor: pointer; padding: 1px 4px; border-radius: 3px; flex-shrink: 0;
+}
+.win-btn:hover { background: #181f2c; color: #c8d4e0; }
+.win-btn.close:hover { background: #c0392b; color: #fff; }
+.win-btn.pin.active { color: #3a7bd5; }
+
+/* ── body ─────────────────────────────────────────────────────────── */
+.body {
+  padding: 6px 8px;
+  height: calc(100vh - 26px); overflow-y: auto;
+}
+.body::-webkit-scrollbar { width: 3px; }
+.body::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 2px; }
+
+h2 {
+  margin: 0 0 6px; font-size: 10px; color: #3a7bd5;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+
+/* ── search / add row ─────────────────────────────────────────────── */
+.addrow { display: flex; gap: 4px; margin-bottom: 6px; }
+input {
+  background: #131820; border: 1px solid #202a3a; border-radius: 3px;
+  color: #c8d4e0; padding: 4px 7px; font-size: 11px; outline: none; flex: 1; min-width: 0;
+}
+input:focus { border-color: #3a7bd5; }
+button.act {
+  padding: 4px 9px; background: #1e3a6e; border: none; border-radius: 3px;
+  color: #90b8f0; font-size: 11px; cursor: pointer; white-space: nowrap;
+}
+button.act:hover { background: #3a7bd5; color: #fff; }
+
+/* ── rows ─────────────────────────────────────────────────────────── */
+.row { padding: 4px 0; border-bottom: 1px solid #111820; }
+.row:last-child { border-bottom: none; }
+.row-head { display: flex; align-items: center; gap: 5px; }
+.name { font-weight: 600; flex: 1; color: #d0dce8; font-size: 12px; }
+.sub  { font-size: 10px; color: #4a5a70; }
+
+/* online dot */
+.dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: #2ecf6a; box-shadow: 0 0 5px #2ecf6a66;
+}
+.dot.offline { background: #2a3347; box-shadow: none; }
+.dot.unknown { background: #c9942a; box-shadow: none; }
+
+/* progress bar */
+.bar { height: 3px; background: #131820; border-radius: 2px; overflow: hidden; margin-top: 3px; }
+.bar > i { display: block; height: 100%; background: #3a7bd5; border-radius: 2px; }
+
+/* member/owner badge */
+.badge {
+  font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 2px;
+  background: #0d1520; color: #7a9ac0; border: 1px solid #1e3050; flex-shrink: 0;
+}
+
+/* hint text */
+.hint { color: #2e3e52; font-size: 11px; padding: 6px 0; }
+
+/* material tags */
+.mat {
+  display: inline-block; font-size: 10px; color: #7a9ac0;
+  background: #0d1520; border: 1px solid #1a2535;
+  border-radius: 2px; padding: 1px 5px; margin: 2px 2px 0 0;
+}
+
+/* remove button */
+.rm {
+  background: none; border: none; color: #2a3347;
+  cursor: pointer; font-size: 11px; padding: 0 2px; flex-shrink: 0;
+}
+.rm:hover { color: #c0392b; }
