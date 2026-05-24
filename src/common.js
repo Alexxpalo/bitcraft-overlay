@@ -70,14 +70,15 @@ async function openPanel(label, url, opts = {}) {
   if (existing) { existing.setFocus(); return; }
   new T.webviewWindow.WebviewWindow(label, {
     url,
-    width:     opts.width  ?? 360,
-    height:    opts.height ?? 480,
-    minWidth:  240,
-    minHeight: 30,
+    width:       opts.width  ?? 360,
+    height:      opts.height ?? 480,
+    minWidth:    240,
+    minHeight:   30,
     decorations: false,
     alwaysOnTop: true,
-    resizable: true,
-    title: opts.title ?? label,
+    resizable:   true,
+    skipTaskbar: true,
+    title:       opts.title ?? label,
   });
 }
 
