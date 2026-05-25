@@ -1,16 +1,16 @@
-const settlement = getSettlement();
+﻿const settlement = getSettlement();
 let craftsData = null;
 let itemsMap = {};
 
 async function poll() {
   if (!settlement) { render(); return; }
-  setStatus('refreshing…');
+  setStatus('refreshingâ€¦');
   try {
-    const j = await bitjita(`crafts?claimEntityId=${encodeURIComponent(settlement.id)}`);
+    const j = await bitwasp(`crafts?claimEntityId=${encodeURIComponent(settlement.id)}`);
     craftsData = j.craftResults || [];
     itemsMap = {};
     for (const item of (j.items || [])) itemsMap[item.id] = item.name;
-    setStatus('● live', 'ok');
+    setStatus('â— live', 'ok');
   } catch(e) {
     setStatus('error: ' + e, 'err');
   }
@@ -33,7 +33,7 @@ function render() {
     fitWindow(); return;
   }
   if (craftsData === null) {
-    el.innerHTML = '<div class="hint">loading…</div>';
+    el.innerHTML = '<div class="hint">loadingâ€¦</div>';
     fitWindow(); return;
   }
   const active = craftsData.filter(j => !j.completed);
@@ -50,7 +50,7 @@ function render() {
     const pct    = total > 0 ? Math.round(prog / total * 100) : 0;
     return `<div class="row">
       <div class="row-head">
-        <span class="name">${esc(name)}${qty > 1 ? ` ×${qty}` : ''}</span>
+        <span class="name">${esc(name)}${qty > 1 ? ` Ã—${qty}` : ''}</span>
         ${member ? `<span class="badge">${esc(member)}</span>` : ''}
         ${total > 0 ? `<span class="sub">${pct}%</span>` : ''}
       </div>
@@ -64,3 +64,4 @@ initChrome();
 render();
 poll();
 onPollTick(poll);
+

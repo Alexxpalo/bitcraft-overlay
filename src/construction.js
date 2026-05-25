@@ -1,13 +1,13 @@
-const settlement = getSettlement();
+﻿const settlement = getSettlement();
 let projectsData = null;
 
 async function poll() {
   if (!settlement) { render(); return; }
-  setStatus('refreshing…');
+  setStatus('refreshingâ€¦');
   try {
-    const j = await bitjita(`claims/${settlement.id}/construction`);
+    const j = await bitwasp(`claims/${settlement.id}/construction`);
     projectsData = j.projects || [];
-    setStatus('● live', 'ok');
+    setStatus('â— live', 'ok');
   } catch(e) {
     setStatus('error: ' + e, 'err');
   }
@@ -21,7 +21,7 @@ function matLine(items, cargos) {
   return '<div style="margin-top:2px">' +
     all.map(m => {
       const name = nameMap[m.item_id] || `#${m.item_id}`;
-      return `<span class="mat">${esc(name)} ×${m.quantity}</span>`;
+      return `<span class="mat">${esc(name)} Ã—${m.quantity}</span>`;
     }).join('') + '</div>';
 }
 
@@ -32,7 +32,7 @@ function render() {
     fitWindow(); return;
   }
   if (projectsData === null) {
-    el.innerHTML = '<div class="hint">loading…</div>';
+    el.innerHTML = '<div class="hint">loadingâ€¦</div>';
     fitWindow(); return;
   }
   if (projectsData.length === 0) {
@@ -60,3 +60,4 @@ initChrome();
 render();
 poll();
 onPollTick(poll);
+

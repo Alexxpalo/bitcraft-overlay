@@ -1,9 +1,9 @@
-const settlement = getSettlement();
+﻿const settlement = getSettlement();
 let membersData = null;
 
 async function fetchStatus(userName) {
   try {
-    const j = await bitjita(`players?q=${encodeURIComponent(userName)}`);
+    const j = await bitwasp(`players?q=${encodeURIComponent(userName)}`);
     const p = (j.players || []).find(pl =>
       (pl.username || '').toLowerCase() === userName.toLowerCase()
     );
@@ -13,16 +13,16 @@ async function fetchStatus(userName) {
 
 async function poll() {
   if (!settlement) { render(); return; }
-  setStatus('refreshing…');
+  setStatus('refreshingâ€¦');
   try {
-    const j = await bitjita(`claims/${settlement.id}/citizens`);
+    const j = await bitwasp(`claims/${settlement.id}/citizens`);
     const citizens = j.citizens || [];
     const results = await Promise.all(citizens.map(async c => {
       const status = await fetchStatus(c.userName);
       return { userName: c.userName, signedIn: status?.signedIn ?? false, lastLogin: status?.lastLogin ?? null };
     }));
     membersData = results;
-    setStatus('● live', 'ok');
+    setStatus('â— live', 'ok');
   } catch(e) {
     setStatus('error: ' + e, 'err');
   }
@@ -36,7 +36,7 @@ function render() {
     fitWindow(); return;
   }
   if (membersData === null) {
-    el.innerHTML = '<div class="hint">loading…</div>';
+    el.innerHTML = '<div class="hint">loadingâ€¦</div>';
     fitWindow(); return;
   }
   if (membersData.length === 0) {
@@ -65,3 +65,4 @@ initChrome();
 render();
 poll();
 onPollTick(poll);
+

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -29,9 +29,9 @@
   <div id="drag-bar">
     <span class="logo">BITCRAFT</span>
     <span class="spacer"></span>
-    <button class="win-btn" id="collapse-btn" title="Collapse/expand">▲</button>
-    <button class="win-btn" id="min-btn" title="Minimize">—</button>
-    <button class="win-btn close" id="close-btn" title="Close">✕</button>
+    <button class="win-btn" id="collapse-btn" title="Collapse/expand">â–²</button>
+    <button class="win-btn" id="min-btn" title="Minimize">â€”</button>
+    <button class="win-btn close" id="close-btn" title="Close">âœ•</button>
   </div>
 
   <div class="collapsible">
@@ -53,19 +53,19 @@
     </div>
     <div class="panel-btns">
       <button class="panel-btn" id="open-members">
-        <span class="ic">👥</span>
+        <span class="ic">ðŸ‘¥</span>
         <span class="lbl">Members<span class="sub">Who's online</span></span>
       </button>
       <button class="panel-btn" id="open-builds">
-        <span class="ic">🏗️</span>
+        <span class="ic">ðŸ—ï¸</span>
         <span class="lbl">Builds<span class="sub">Construction progress</span></span>
       </button>
       <button class="panel-btn" id="open-crafts">
-        <span class="ic">⚒️</span>
+        <span class="ic">âš’ï¸</span>
         <span class="lbl">Crafts<span class="sub">Active crafting jobs</span></span>
       </button>
       <button class="panel-btn" id="open-inventory">
-        <span class="ic">📦</span>
+        <span class="ic">ðŸ“¦</span>
         <span class="lbl">Inventory<span class="sub">Settlement storage</span></span>
       </button>
     </div>
@@ -87,7 +87,7 @@
       const q = document.getElementById('search-input').value.trim();
       if (q.length < 2) return;
       try {
-        const j = await bitjita(`claims?q=${encodeURIComponent(q)}&limit=8`);
+        const j = await bitwasp(`claims?q=${encodeURIComponent(q)}&limit=8`);
         const res = document.getElementById('results');
         res.innerHTML = (j.claims || []).map(c =>
           `<div class="row"><div class="row-head">
@@ -140,3 +140,4 @@
   </script>
 </body>
 </html>
+

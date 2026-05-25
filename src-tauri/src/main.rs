@@ -1,4 +1,4 @@
-// Prevents console window on Windows in release builds
+﻿// Prevents console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::OnceLock;
@@ -13,11 +13,11 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
-/// Generic GET proxy to the Bitjita REST API, run server-side to avoid the
+/// Generic GET proxy to the bitwasp REST API, run server-side to avoid the
 /// CORS restriction that blocks requests from the WebView.
 #[tauri::command]
-async fn bitjita(path: String) -> Result<serde_json::Value, String> {
-    let url = format!("https://bitjita.com/api/{path}");
+async fn bitwasp(path: String) -> Result<serde_json::Value, String> {
+    let url = format!("https://bitwasp.com/api/{path}");
     let resp = http_client()
         .get(&url)
         .send()
@@ -48,7 +48,7 @@ fn is_game_focused() -> bool {
         use winapi::um::processthreadsapi::GetCurrentProcessId;
         use winapi::um::winuser::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId};
         let hwnd = GetForegroundWindow();
-        // If foreground window belongs to our process (any overlay panel) → stay visible
+        // If foreground window belongs to our process (any overlay panel) â†’ stay visible
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
         if pid == GetCurrentProcessId() {
@@ -82,7 +82,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            bitjita,
+            bitwasp,
             toggle_always_on_top,
             set_window_size,
             is_game_focused,
@@ -90,3 +90,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

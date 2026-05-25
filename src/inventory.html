@@ -14,6 +14,11 @@
     .sort-btn:hover  { border-color: #3a7bd5; color: #90b8f0; }
     .sort-btn.active { border-color: #3a7bd5; color: #3a7bd5; background: #0d1e35; }
     .qty { font-size: 11px; color: #90b8f0; flex-shrink: 0; }
+    select {
+      background: #131820; border: 1px solid #202a3a; border-radius: 3px;
+      color: #c8d4e0; padding: 3px 6px; font-size: 11px; outline: none; width: 100%;
+    }
+    select:focus { border-color: #3a7bd5; }
   </style>
 </head>
 <body>
@@ -28,11 +33,19 @@
   <div class="body collapsible">
     <div class="inv-ctrl">
       <input id="inv-search" placeholder="Search items…" autocomplete="off" />
-      <div class="sort-btns">
+      <div id="inv-sort" class="sort-btns">
         <button class="sort-btn active" data-sort="name-asc">A→Z</button>
         <button class="sort-btn" data-sort="name-desc">Z→A</button>
         <button class="sort-btn" data-sort="qty-desc">Qty ↓</button>
         <button class="sort-btn" data-sort="qty-asc">Qty ↑</button>
+      </div>
+      <div style="display:flex;gap:4px">
+        <select id="group-filter" style="flex:1">
+          <option value="">All</option>
+        </select>
+        <select id="tag-filter" style="flex:1">
+          <option value="">All stages</option>
+        </select>
       </div>
     </div>
     <div id="list"></div>

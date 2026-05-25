@@ -1,20 +1,20 @@
-const POLL_MS = 20000;
+﻿const POLL_MS = 20000;
 let watched = JSON.parse(localStorage.getItem('bc-watched') || '[]'); // lowercase usernames
-const players = new Map(); // name → { username, signedIn, lastLogin } | null
+const players = new Map(); // name â†’ { username, signedIn, lastLogin } | null
 
 async function fetchPlayer(name) {
-  const j = await bitjita(`players?q=${encodeURIComponent(name)}`);
+  const j = await bitwasp(`players?q=${encodeURIComponent(name)}`);
   const m = (j.players || []).find(p => (p.username || '').toLowerCase() === name);
   return m ? { username: m.username, signedIn: !!m.signedIn, lastLogin: m.lastLoginTimestamp } : null;
 }
 
 async function poll() {
   if (watched.length === 0) { render(); return; }
-  setStatus('refreshing…');
+  setStatus('refreshingâ€¦');
   await Promise.all(watched.map(async n => {
     try { players.set(n, await fetchPlayer(n)); } catch (e) { /* keep old */ }
   }));
-  setStatus('● live', 'ok');
+  setStatus('â— live', 'ok');
   render();
 }
 
@@ -46,7 +46,7 @@ function render() {
     const dot = !resolved || !found ? 'unknown' : online ? '' : 'offline';
     const disp = found ? p.username : name;
     let st;
-    if (!resolved) st = '…';
+    if (!resolved) st = 'â€¦';
     else if (!found) st = 'not found';
     else if (online) st = 'online';
     else st = p.lastLogin ? `last seen ${relTime(p.lastLogin)}` : 'offline';
@@ -54,7 +54,7 @@ function render() {
       <div class="dot ${dot}"></div>
       <span class="name">${esc(disp)}</span>
       <span class="row-sub">${esc(st)}</span>
-      <button class="rm" data-n="${esc(name)}">✕</button>
+      <button class="rm" data-n="${esc(name)}">âœ•</button>
     </div></div>`;
   }).join('');
   el.querySelectorAll('.rm').forEach(b => b.addEventListener('click', () => removeWatch(b.dataset.n)));
@@ -66,3 +66,4 @@ document.getElementById('name-input').addEventListener('keydown', e => { if (e.k
 render();
 poll();
 setInterval(poll, POLL_MS);
+

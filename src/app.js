@@ -1,12 +1,12 @@
-const POLL_MS = 20000;
+﻿const POLL_MS = 20000;
 
 let watched = JSON.parse(localStorage.getItem('bc-watched') || '[]'); // lowercase usernames
-const players = new Map(); // lowercase name → { username, signedIn, lastLogin } | null (not found)
+const players = new Map(); // lowercase name â†’ { username, signedIn, lastLogin } | null (not found)
 let pollTimer = null;
 
-// ── data ───────────────────────────────────────────────────────────────────────
+// â”€â”€ data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function fetchPlayer(name) {
-  // Go through the Rust backend to avoid CORS on bitjita.com
+  // Go through the Rust backend to avoid CORS on bitwasp.com
   const j = await window.__TAURI__.core.invoke('fetch_player', { name });
   const match = (j.players || []).find(p => (p.username || '').toLowerCase() === name);
   return match
@@ -16,16 +16,16 @@ async function fetchPlayer(name) {
 
 async function poll() {
   if (watched.length === 0) { render(); return; }
-  setStatus('refreshing…', '');
+  setStatus('refreshingâ€¦', '');
   await Promise.all(watched.map(async name => {
     try { players.set(name, await fetchPlayer(name)); }
     catch (e) { log(`${name}: ${e.message}`); }
   }));
-  setStatus('● live', 'connected');
+  setStatus('â— live', 'connected');
   render();
 }
 
-// ── watch list ───────────────────────────────────────────────────────────────
+// â”€â”€ watch list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function addWatch() {
   const inp = document.getElementById('name-input');
   const name = inp.value.trim().toLowerCase();
@@ -46,7 +46,7 @@ function removeWatch(name) {
   render();
 }
 
-// ── UI ───────────────────────────────────────────────────────────────────────
+// â”€â”€ UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function render() {
   const el = document.getElementById('players');
   if (watched.length === 0) {
@@ -61,7 +61,7 @@ function render() {
     const dotCls = !resolved ? 'unknown' : !found ? 'unknown' : online ? '' : 'offline';
     const disp = found ? p.username : name;
     let status;
-    if (!resolved) status = '…';
+    if (!resolved) status = 'â€¦';
     else if (!found) status = 'not found';
     else if (online) status = 'online';
     else status = p.lastLogin ? `last seen ${relTime(p.lastLogin)}` : 'offline';
@@ -69,7 +69,7 @@ function render() {
       <div class="dot ${dotCls}"></div>
       <span class="pname">${esc(disp)}</span>
       <span class="pstatus">${esc(status)}</span>
-      <button class="rm" data-n="${esc(name)}">✕</button>
+      <button class="rm" data-n="${esc(name)}">âœ•</button>
     </div>`;
   }).join('');
   el.querySelectorAll('.rm').forEach(b => b.addEventListener('click', () => removeWatch(b.dataset.n)));
@@ -99,7 +99,7 @@ function log(msg) {
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
-// ── init ─────────────────────────────────────────────────────────────────────
+// â”€â”€ init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 document.getElementById('add-btn').addEventListener('click', addWatch);
 document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') addWatch(); });
 
@@ -113,3 +113,4 @@ document.getElementById('close-btn').addEventListener('click', () => {
 render();
 poll();
 pollTimer = setInterval(poll, POLL_MS);
+

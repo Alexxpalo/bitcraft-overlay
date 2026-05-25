@@ -1,4 +1,4 @@
-// Shared helpers for all overlay windows.
+﻿// Shared helpers for all overlay windows.
 const T = window.__TAURI__;
 
 // Shared poll clock via BroadcastChannel.
@@ -7,9 +7,9 @@ const _pollBus = new BroadcastChannel('bc-poll');
 function onPollTick(fn) { _pollBus.addEventListener('message', () => fn()); }
 function startPollClock(ms = 30000) { setInterval(() => _pollBus.postMessage('tick'), ms); }
 
-// Call the Bitjita REST API via the Rust backend (avoids CORS).
-async function bitjita(path) {
-  return T.core.invoke('bitjita', { path });
+// Call the bitwasp REST API via the Rust backend (avoids CORS).
+async function bitwasp(path) {
+  return T.core.invoke('bitwasp', { path });
 }
 
 // Auto-hide overlay when BitCraft loses focus.
@@ -62,21 +62,21 @@ function initChrome() {
 async function toggleCollapse(btn) {
   const win = T.window.getCurrentWindow();
   const HKEY = 'bc-h-' + win.label;
-  const isCollapsed = btn.textContent.trim() === '▼';
+  const isCollapsed = btn.textContent.trim() === 'â–¼';
   if (isCollapsed) {
     const h = parseInt(localStorage.getItem(HKEY) || '340');
     const sz = await win.innerSize();
     const sf = await win.scaleFactor();
     const w = Math.round(sz.width / sf);
     await T.core.invoke('set_window_size', { width: w, height: h });
-    btn.textContent = '▲';
+    btn.textContent = 'â–²';
     document.querySelectorAll('.collapsible').forEach(el => el.style.display = '');
   } else {
     const sz = await win.innerSize();
     const sf = await win.scaleFactor();
     localStorage.setItem(HKEY, Math.round(sz.height / sf));
     await T.core.invoke('set_window_size', { width: Math.round(sz.width / sf), height: 30 });
-    btn.textContent = '▼';
+    btn.textContent = 'â–¼';
     document.querySelectorAll('.collapsible').forEach(el => el.style.display = 'none');
   }
 }
@@ -120,7 +120,7 @@ function setStatus(text, cls = '') {
 async function fitWindow(maxH = 420) {
   try {
     const btn = document.getElementById('collapse-btn');
-    if (btn && btn.textContent.trim() === '▼') return; // collapsed, don't touch
+    if (btn && btn.textContent.trim() === 'â–¼') return; // collapsed, don't touch
     const body = document.querySelector('.collapsible');
     if (!body) return;
     const h = Math.min(body.scrollHeight + 26 + 1, maxH); // 26 = drag bar
@@ -141,3 +141,4 @@ function relTime(ts) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
