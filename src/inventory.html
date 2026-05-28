@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background:#080b10">
 <head>
   <meta charset="UTF-8">
   <title>Inventory</title>
@@ -8,8 +8,10 @@
     .inv-ctrl { display: flex; flex-direction: column; gap: 4px; margin-bottom: 5px; }
     .sort-btns { display: flex; gap: 3px; }
     .sort-btn {
+      -webkit-appearance: none; appearance: none;
       flex: 1; padding: 2px 0; background: #0d1520; border: 1px solid #1a2535;
       border-radius: 3px; color: #3a5070; font-size: 10px; cursor: pointer;
+      box-sizing: border-box;
     }
     .sort-btn:hover  { border-color: #3a7bd5; color: #90b8f0; }
     .sort-btn.active { border-color: #3a7bd5; color: #3a7bd5; background: #0d1e35; }
@@ -26,9 +28,9 @@
     <span class="status-dot" id="status-dot" title="…"></span>
     <span class="logo">INVENTORY</span>
     <span class="spacer"></span>
-    <button class="win-btn" id="collapse-btn" title="Collapse/expand">▲</button>
-    <button class="win-btn" id="min-btn" title="Minimize">—</button>
-    <button class="win-btn close" id="close-btn" title="Close">✕</button>
+    <span class="win-btn" id="collapse-btn" title="Collapse/expand">&#x25B2;</span>
+    <span class="win-btn" id="min-btn" title="Minimize">&#x2013;</span>
+    <span class="win-btn close" id="close-btn" title="Close">&#x2715;</span>
   </div>
   <div class="body collapsible">
     <div class="inv-ctrl">

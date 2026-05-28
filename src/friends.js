@@ -1,6 +1,6 @@
-﻿const POLL_MS = 20000;
+const POLL_MS = 20000;
 let watched = JSON.parse(localStorage.getItem('bc-watched') || '[]'); // lowercase usernames
-const players = new Map(); // name â†’ { username, signedIn, lastLogin } | null
+const players = new Map(); // name → { username, signedIn, lastLogin } | null
 
 async function fetchPlayer(name) {
   const j = await bitwasp(`players?q=${encodeURIComponent(name)}`);
@@ -10,11 +10,11 @@ async function fetchPlayer(name) {
 
 async function poll() {
   if (watched.length === 0) { render(); return; }
-  setStatus('refreshingâ€¦');
+  setStatus('refreshing…');
   await Promise.all(watched.map(async n => {
     try { players.set(n, await fetchPlayer(n)); } catch (e) { /* keep old */ }
   }));
-  setStatus('â— live', 'ok');
+  setStatus('● live', 'ok');
   render();
 }
 
@@ -46,21 +46,36 @@ function render() {
     const dot = !resolved || !found ? 'unknown' : online ? '' : 'offline';
     const disp = found ? p.username : name;
     let st;
-    if (!resolved) st = 'â€¦';
+    if (!resolved) st = '…';
     else if (!found) st = 'not found';
     else if (online) st = 'online';
     else st = p.lastLogin ? `last seen ${relTime(p.lastLogin)}` : 'offline';
     return `<div class="row"><div class="row-head">
       <div class="dot ${dot}"></div>
       <span class="name">${esc(disp)}</span>
-      <span class="row-sub">${esc(st)}</span>
-      <button class="rm" data-n="${esc(name)}">âœ•</button>
+      <span class="sub">${esc(st)}</span>
+      <button class="rm" data-n="${esc(name)}">✕</button>
     </div></div>`;
   }).join('');
   el.querySelectorAll('.rm').forEach(b => b.addEventListener('click', () => removeWatch(b.dataset.n)));
+  fitWindow();
 }
 
 initChrome();
+
+// Pin button: keep window visible even when the game loses focus.
+window._pinned = true; // active by default (matches the 'active' class on the button)
+const _pinBtn = document.getElementById('pin-btn');
+if (_pinBtn) {
+  _pinBtn.addEventListener('click', async () => {
+    window._pinned = !window._pinned;
+    _pinBtn.classList.toggle('active', window._pinned);
+    if (window._pinned && T?.window) {
+      await T.window.getCurrentWindow().setAlwaysOnTop(true);
+    }
+  });
+}
+
 document.getElementById('add-btn').addEventListener('click', addWatch);
 document.getElementById('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') addWatch(); });
 render();

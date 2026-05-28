@@ -3,11 +3,11 @@ let projectsData = null;
 
 async function poll() {
   if (!settlement) { render(); return; }
-  setStatus('refreshingâ€¦');
+  setStatus('refreshing…');
   try {
     const j = await bitwasp(`claims/${settlement.id}/construction`);
     projectsData = j.projects || [];
-    setStatus('â— live', 'ok');
+    setStatus('● live', 'ok');
   } catch(e) {
     setStatus('error: ' + e, 'err');
   }
@@ -21,7 +21,7 @@ function matLine(items, cargos) {
   return '<div style="margin-top:2px">' +
     all.map(m => {
       const name = nameMap[m.item_id] || `#${m.item_id}`;
-      return `<span class="mat">${esc(name)} Ã—${m.quantity}</span>`;
+      return `<span class="mat">${esc(name)} ×${m.quantity}</span>`;
     }).join('') + '</div>';
 }
 
@@ -32,7 +32,7 @@ function render() {
     fitWindow(); return;
   }
   if (projectsData === null) {
-    el.innerHTML = '<div class="hint">loadingâ€¦</div>';
+    el.innerHTML = '<div class="hint">loading…</div>';
     fitWindow(); return;
   }
   if (projectsData.length === 0) {

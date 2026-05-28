@@ -1,4 +1,4 @@
-﻿// Shared helpers for all overlay windows.
+// Shared helpers for all overlay windows.
 const T = window.__TAURI__;
 
 // Shared poll clock via BroadcastChannel.
@@ -16,7 +16,9 @@ async function bitwasp(path) {
 // Polls every 700ms; respects the pin button (watcher disabled when unpinned).
 (async function startFocusWatcher() {
   const win = T.window.getCurrentWindow();
+  await win.setAlwaysOnTop(true);
   setInterval(async () => {
+    if (window._pinned) return;
     try {
       const active = await T.core.invoke('is_game_focused');
       await win.setAlwaysOnTop(active);
@@ -26,6 +28,11 @@ async function bitwasp(path) {
 
 // Wire up the standard window chrome: drag bar, close, pin, optional collapse.
 function initChrome() {
+  // Collapse button works without Tauri
+  const collapse = document.getElementById('collapse-btn');
+  if (collapse) collapse.addEventListener('click', () => toggleCollapse(collapse));
+
+  if (!T?.window) return;
   const win = T.window.getCurrentWindow();
 
   // Save position to localStorage whenever the window is moved (debounced).
@@ -54,29 +61,27 @@ function initChrome() {
   if (close) close.addEventListener('click', () => win.close());
   const min = document.getElementById('min-btn');
   if (min) min.addEventListener('click', () => win.minimize());
-  const collapse = document.getElementById('collapse-btn');
-  if (collapse) collapse.addEventListener('click', () => toggleCollapse(collapse));
 }
 
 // Collapse the window to just the drag bar, or expand it back.
 async function toggleCollapse(btn) {
   const win = T.window.getCurrentWindow();
   const HKEY = 'bc-h-' + win.label;
-  const isCollapsed = btn.textContent.trim() === 'â–¼';
+  const isCollapsed = btn.textContent.trim() === '▼';
   if (isCollapsed) {
     const h = parseInt(localStorage.getItem(HKEY) || '340');
     const sz = await win.innerSize();
     const sf = await win.scaleFactor();
     const w = Math.round(sz.width / sf);
     await T.core.invoke('set_window_size', { width: w, height: h });
-    btn.textContent = 'â–²';
+    btn.textContent = '▲';
     document.querySelectorAll('.collapsible').forEach(el => el.style.display = '');
   } else {
     const sz = await win.innerSize();
     const sf = await win.scaleFactor();
     localStorage.setItem(HKEY, Math.round(sz.height / sf));
     await T.core.invoke('set_window_size', { width: Math.round(sz.width / sf), height: 30 });
-    btn.textContent = 'â–¼';
+    btn.textContent = '▼';
     document.querySelectorAll('.collapsible').forEach(el => el.style.display = 'none');
   }
 }
@@ -94,6 +99,8 @@ async function openPanel(label, url, opts = {}) {
     minWidth:    240,
     minHeight:   30,
     decorations: false,
+    transparent: false,
+    shadow:      false,
     alwaysOnTop: true,
     resizable:   true,
     skipTaskbar: true,
@@ -120,7 +127,7 @@ function setStatus(text, cls = '') {
 async function fitWindow(maxH = 420) {
   try {
     const btn = document.getElementById('collapse-btn');
-    if (btn && btn.textContent.trim() === 'â–¼') return; // collapsed, don't touch
+    if (btn && btn.textContent.trim() === '▼') return; // collapsed, don't touch
     const body = document.querySelector('.collapsible');
     if (!body) return;
     const h = Math.min(body.scrollHeight + 26 + 1, maxH); // 26 = drag bar

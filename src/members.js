@@ -13,7 +13,7 @@ async function fetchStatus(userName) {
 
 async function poll() {
   if (!settlement) { render(); return; }
-  setStatus('refreshingâ€¦');
+  setStatus('refreshing…');
   try {
     const j = await bitwasp(`claims/${settlement.id}/citizens`);
     const citizens = j.citizens || [];
@@ -22,7 +22,7 @@ async function poll() {
       return { userName: c.userName, signedIn: status?.signedIn ?? false, lastLogin: status?.lastLogin ?? null };
     }));
     membersData = results;
-    setStatus('â— live', 'ok');
+    setStatus('● live', 'ok');
   } catch(e) {
     setStatus('error: ' + e, 'err');
   }
@@ -36,7 +36,7 @@ function render() {
     fitWindow(); return;
   }
   if (membersData === null) {
-    el.innerHTML = '<div class="hint">loadingâ€¦</div>';
+    el.innerHTML = '<div class="hint">loading…</div>';
     fitWindow(); return;
   }
   if (membersData.length === 0) {

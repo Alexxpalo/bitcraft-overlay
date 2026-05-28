@@ -1,5 +1,5 @@
-﻿<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" style="background:#080b10">
 <head>
   <meta charset="UTF-8">
   <title>BitCraft Overlay</title>
@@ -7,9 +7,11 @@
   <style>
     .panel-btns { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
     .panel-btn {
+      -webkit-appearance: none; appearance: none;
       display: flex; align-items: center; gap: 8px;
       padding: 6px 8px; background: #0d1520; border: 1px solid #1a2535;
       border-radius: 4px; color: #c8d4e0; font-size: 11px; cursor: pointer; text-align: left; width: 100%;
+      box-sizing: border-box;
     }
     .panel-btn:hover { background: #111c2e; border-color: #3a7bd5; }
     .panel-btn .ic  { font-size: 13px; }
@@ -19,19 +21,22 @@
     .settlement-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .settlement-row .name { font-weight: 600; flex: 1; color: #c8d4e0; font-size: 12px; }
     .btn-change {
+      -webkit-appearance: none; appearance: none;
       background: none; border: 1px solid #1a2535; border-radius: 3px;
       color: #3a5070; font-size: 10px; padding: 2px 6px; cursor: pointer;
+      box-sizing: border-box;
     }
     .btn-change:hover { border-color: #c0392b; color: #c0392b; }
   </style>
 </head>
 <body>
   <div id="drag-bar">
-    <span class="logo">BITCRAFT</span>
+    <span class="status-dot" id="status-dot" title=""></span>
+    <span class="logo">BITWASP</span>
     <span class="spacer"></span>
-    <button class="win-btn" id="collapse-btn" title="Collapse/expand">â–²</button>
-    <button class="win-btn" id="min-btn" title="Minimize">â€”</button>
-    <button class="win-btn close" id="close-btn" title="Close">âœ•</button>
+    <span class="win-btn" id="collapse-btn" title="Collapse/expand">&#x25B2;</span>
+    <span class="win-btn" id="min-btn" title="Minimize">&#x2013;</span>
+    <span class="win-btn close" id="close-btn" title="Close">&#x2715;</span>
   </div>
 
   <div class="collapsible">
@@ -53,19 +58,19 @@
     </div>
     <div class="panel-btns">
       <button class="panel-btn" id="open-members">
-        <span class="ic">ðŸ‘¥</span>
+        <span class="ic">👥</span>
         <span class="lbl">Members<span class="sub">Who's online</span></span>
       </button>
       <button class="panel-btn" id="open-builds">
-        <span class="ic">ðŸ—ï¸</span>
+        <span class="ic">🏗️</span>
         <span class="lbl">Builds<span class="sub">Construction progress</span></span>
       </button>
       <button class="panel-btn" id="open-crafts">
-        <span class="ic">âš’ï¸</span>
+        <span class="ic">⚒️</span>
         <span class="lbl">Crafts<span class="sub">Active crafting jobs</span></span>
       </button>
       <button class="panel-btn" id="open-inventory">
-        <span class="ic">ðŸ“¦</span>
+        <span class="ic">📦</span>
         <span class="lbl">Inventory<span class="sub">Settlement storage</span></span>
       </button>
     </div>
@@ -86,10 +91,12 @@
     async function search() {
       const q = document.getElementById('search-input').value.trim();
       if (q.length < 2) return;
+      setStatus('searching…');
       try {
         const j = await bitwasp(`claims?q=${encodeURIComponent(q)}&limit=8`);
         const res = document.getElementById('results');
-        res.innerHTML = (j.claims || []).map(c =>
+        const hits = j.claims || [];
+        res.innerHTML = hits.map(c =>
           `<div class="row"><div class="row-head">
             <span class="name">${esc(c.name)}</span>
             <button class="act sel" data-id="${c.entityId}" data-name="${esc(c.name)}">Select</button>
@@ -97,7 +104,11 @@
         ).join('') || '<div class="hint">No settlements found.</div>';
         res.querySelectorAll('.sel').forEach(b =>
           b.addEventListener('click', () => pick(b.dataset.id, b.dataset.name)));
-      } catch(e) { /* ignore */ }
+        setStatus(hits.length ? '● ok' : 'no results', hits.length ? 'ok' : '');
+      } catch(e) {
+        document.getElementById('results').innerHTML = '<div class="hint" style="color:#e05252">' + e + '</div>';
+        setStatus('error', 'err');
+      }
     }
 
     async function pick(id, name) {

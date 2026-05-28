@@ -66,7 +66,7 @@ async function batchRootTags(ids) {
 // â”€â”€ Poll â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function poll() {
   if (!settlement) { render(); return; }
-  setStatus('refreshingâ€¦');
+  setStatus('refreshing…');
   try {
     const j = await bitwasp(`claims/${settlement.id}/inventories`);
 
@@ -85,7 +85,7 @@ async function poll() {
 
     // Resolve root groups (cached after first run)
     const ids = Object.keys(totals);
-    setStatus('building groupsâ€¦');
+    setStatus('building groups…');
     const rootMap = await batchRootTags(ids);
 
     allRows = ids.map(id => {
@@ -102,7 +102,7 @@ async function poll() {
     for (const [id, m] of Object.entries(itemsMap)) nameOnly[id] = m.name;
     localStorage.setItem('bc-items-map', JSON.stringify(nameOnly));
 
-    setStatus('â— live', 'ok');
+    setStatus('● live', 'ok');
     rebuildFilters();
   } catch(e) {
     setStatus('error: ' + e, 'err');
@@ -160,7 +160,7 @@ function render() {
     fitWindow(500); return;
   }
   if (allRows === null) {
-    el.innerHTML = '<div class="hint">loadingâ€¦</div>';
+    el.innerHTML = '<div class="hint">loading…</div>';
     fitWindow(500); return;
   }
   const rows = getVisible();
@@ -171,7 +171,7 @@ function render() {
   el.innerHTML = rows.map(r =>
     `<div class="row"><div class="row-head">
       <span class="name">${esc(r.name)}</span>
-      <span class="qty">Ã—${r.qty.toLocaleString()}</span>
+      <span class="qty">×${r.qty.toLocaleString()}</span>
     </div></div>`
   ).join('');
   fitWindow(500);
