@@ -1,154 +1,620 @@
 <!DOCTYPE html>
-<html lang="en" style="background:#080b10">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BitCraft Overlay</title>
+  <title>Bitwasp Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="common.css">
   <style>
-    .panel-btns { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
-    .panel-btn {
-      -webkit-appearance: none; appearance: none;
-      display: flex; align-items: center; gap: 8px;
-      padding: 6px 8px; background: #0d1520; border: 1px solid #1a2535;
-      border-radius: 4px; color: #c8d4e0; font-size: 11px; cursor: pointer; text-align: left; width: 100%;
-      box-sizing: border-box;
-    }
-    .panel-btn:hover { background: #111c2e; border-color: #3a7bd5; }
-    .panel-btn .ic  { font-size: 13px; }
-    .panel-btn .lbl { flex: 1; font-weight: 600; }
-    .panel-btn .sub { font-size: 10px; color: #3a5070; font-weight: 400; display: block; }
-
-    .settlement-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-    .settlement-row .name { font-weight: 600; flex: 1; color: #c8d4e0; font-size: 12px; }
-    .btn-change {
-      -webkit-appearance: none; appearance: none;
-      background: none; border: 1px solid #1a2535; border-radius: 3px;
-      color: #3a5070; font-size: 10px; padding: 2px 6px; cursor: pointer;
-      box-sizing: border-box;
-    }
-    .btn-change:hover { border-color: #c0392b; color: #c0392b; }
+    html, body { height: 100%; display: flex; flex-direction: column; }
+    #app { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    #view-main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    #view-setup { display: flex; flex-direction: column; }
+    .collapsible { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   </style>
 </head>
 <body>
-  <div id="drag-bar">
-    <span class="status-dot" id="status-dot" title=""></span>
-    <span class="logo">BITWASP</span>
-    <span class="spacer"></span>
-    <span class="win-btn" id="collapse-btn" title="Collapse/expand">&#x25B2;</span>
-    <span class="win-btn" id="min-btn" title="Minimize">&#x2013;</span>
-    <span class="win-btn close" id="close-btn" title="Close">&#x2715;</span>
-  </div>
-
-  <div class="collapsible">
-  <!-- Setup: pick a settlement -->
-  <div class="body" id="view-setup">
-    <h2>Select Settlement</h2>
-    <div class="addrow">
-      <input id="search-input" placeholder="Settlement name..." autofocus />
-      <button class="act" id="search-btn">Find</button>
+<div id="app">
+  <!-- SETUP VIEW -->
+  <div id="view-setup" style="display:none">
+    <div class="dragbar" id="drag-bar-setup">
+      <span class="logo">BITWASP</span>
+      <span class="grow"></span>
+      <button class="winbtn close" id="close-btn-setup">✕</button>
     </div>
-    <div id="results"></div>
-  </div>
-
-  <!-- Main: panels -->
-  <div class="body" id="view-main" style="display:none">
-    <div class="settlement-row">
-      <span class="name" id="settlement-name"></span>
-      <button class="btn-change" id="change-btn">change</button>
-    </div>
-    <div class="panel-btns">
-      <button class="panel-btn" id="open-members">
-        <span class="ic">👥</span>
-        <span class="lbl">Members<span class="sub">Who's online</span></span>
-      </button>
-      <button class="panel-btn" id="open-builds">
-        <span class="ic">🏗️</span>
-        <span class="lbl">Builds<span class="sub">Construction progress</span></span>
-      </button>
-      <button class="panel-btn" id="open-crafts">
-        <span class="ic">⚒️</span>
-        <span class="lbl">Crafts<span class="sub">Active crafting jobs</span></span>
-      </button>
-      <button class="panel-btn" id="open-inventory">
-        <span class="ic">📦</span>
-        <span class="lbl">Inventory<span class="sub">Settlement storage</span></span>
-      </button>
+    <div class="setup-content">
+      <h2>Select Settlement</h2>
+      <div class="search-row">
+        <input class="inp" id="search-input" placeholder="Settlement name…" autocomplete="off">
+        <button class="search-btn" id="search-btn">Find</button>
+      </div>
+      <div id="search-results"></div>
     </div>
   </div>
-  </div><!-- /.collapsible -->
 
-  <script src="common.js"></script>
-  <script>
-    initChrome();
-    startPollClock(30000);
-    let settlement = getSettlement();
+  <!-- MAIN VIEW -->
+  <div id="view-main" style="display:none">
+    <div class="dragbar" id="drag-bar-main">
+      <span class="logo">BITWASP</span>
+      <span class="settlement-name" id="settlement-label"></span>
+      <span class="settle-tier" id="settlement-tier"></span>
+      <span class="grow"></span>
+      <button class="winbtn" id="collapse-btn" title="Collapse">▲</button>
+      <button class="winbtn" id="min-btn" title="Minimize">–</button>
+      <button class="winbtn close" id="close-btn-main" title="Close">✕</button>
+    </div>
 
-    function showView(v) {
-      document.getElementById('view-setup').style.display = v === 'setup' ? '' : 'none';
-      document.getElementById('view-main').style.display  = v === 'main'  ? '' : 'none';
-    }
+    <div class="collapsible" id="main-collapsible">
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-tab="storage">Storage</button>
+        <button class="tab" data-tab="builds">Builds</button>
+        <button class="tab" data-tab="jobs">Jobs</button>
+        <button class="tab" data-tab="members">Members
+          <span class="tab-badge" id="online-badge" style="display:none"></span>
+        </button>
+      </div>
 
-    async function search() {
-      const q = document.getElementById('search-input').value.trim();
-      if (q.length < 2) return;
-      setStatus('searching…');
-      try {
-        const j = await bitwasp(`claims?q=${encodeURIComponent(q)}&limit=8`);
-        const res = document.getElementById('results');
-        const hits = j.claims || [];
-        res.innerHTML = hits.map(c =>
-          `<div class="row"><div class="row-head">
-            <span class="name">${esc(c.name)}</span>
-            <button class="act sel" data-id="${c.entityId}" data-name="${esc(c.name)}">Select</button>
-          </div></div>`
-        ).join('') || '<div class="hint">No settlements found.</div>';
-        res.querySelectorAll('.sel').forEach(b =>
-          b.addEventListener('click', () => pick(b.dataset.id, b.dataset.name)));
-        setStatus(hits.length ? '● ok' : 'no results', hits.length ? 'ok' : '');
-      } catch(e) {
-        document.getElementById('results').innerHTML = '<div class="hint" style="color:#e05252">' + e + '</div>';
-        setStatus('error', 'err');
+      <div class="content" id="tab-content"></div>
+
+      <div class="footbar">
+        <span class="region" id="footer-name"></span>
+        <span class="grow"></span>
+        <button class="change-btn" id="change-btn">change</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+// ─── State ────────────────────────────────────────────────────────────────
+let settlement = getSettlement();
+let activeTab = 'storage';
+let storageMode = 'plan'; // 'plan' | 'items'
+let allItems = null;   // flat item rows for all-items view
+let chains = null;     // built chains for craft planner
+let buildsData = null;
+let jobsData = null;
+let membersData = null;
+let itemsMap = {};
+
+const fmt = n => Number(n).toLocaleString('en-US');
+// esc() comes from common.js
+
+// ─── Chain meta cache (v4 includes perCraft) ─────────────────────────────
+const CHAIN_KEY = 'bc-chain-v4';
+function chainCache() { return JSON.parse(localStorage.getItem(CHAIN_KEY) || '{}'); }
+function saveChainCache(c) { localStorage.setItem(CHAIN_KEY, JSON.stringify(c)); }
+
+async function fetchChainMeta(id) {
+  const cache = chainCache();
+  if (cache[id] !== undefined) return cache[id];
+  try {
+    const j = await bitwasp(`items/${id}`);
+    const recipes = j.craftingRecipes || [];
+    let parentId = null, perCraft = null;
+    if (recipes.length > 0) {
+      const stacks = (recipes[0].consumedItemStacks || []).filter(s => (s.discovery_score ?? 1) > 0);
+      if (stacks.length > 0) {
+        parentId = String(stacks[0].item_id);
+        perCraft = stacks[0].quantity || 1;
       }
     }
+    const meta = { tag: j.item?.tag || '', parentId, perCraft };
+    const fresh = chainCache(); fresh[id] = meta; saveChainCache(fresh);
+    return meta;
+  } catch {
+    const meta = { tag: '', parentId: null, perCraft: null };
+    const fresh = chainCache(); fresh[id] = meta; saveChainCache(fresh);
+    return meta;
+  }
+}
 
-    async function pick(id, name) {
-      setSettlement({ id, name });
-      settlement = { id, name };
-      document.getElementById('settlement-name').textContent = name;
-      showView('main');
-      openPanel('members',      'members.html',      { title: 'Members',    width: 220, height: 80 });
-      openPanel('construction', 'construction.html', { title: 'Builds',     width: 240, height: 80 });
-      openPanel('crafts',       'crafts.html',       { title: 'Crafts',     width: 240, height: 80 });
-      openPanel('inventory',    'inventory.html',    { title: 'Inventory',  width: 260, height: 80 });
+async function getRootTag(id, depth = 0) {
+  if (depth > 6) return null;
+  const meta = await fetchChainMeta(id);
+  if (!meta.parentId) return meta.tag || null;
+  return getRootTag(meta.parentId, depth + 1);
+}
+
+async function batchRootTags(ids) {
+  const result = {};
+  const BATCH = 6;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    await Promise.all(slice.map(async id => {
+      result[id] = await getRootTag(id);
+    }));
+  }
+  return result;
+}
+
+// ─── Build chains from flat items ────────────────────────────────────────
+function buildChains(rows) {
+  const byGroup = {};
+  for (const row of rows) {
+    if (row.group && row.group !== '?') {
+      if (!byGroup[row.group]) byGroup[row.group] = [];
+      byGroup[row.group].push(row);
     }
+  }
 
-    function changeSettlement() {
-      setSettlement(null);
-      settlement = null;
-      document.getElementById('results').innerHTML = '';
-      document.getElementById('search-input').value = '';
-      showView('setup');
+  const meta = chainCache();
+  return Object.entries(byGroup).map(([label, stages]) => {
+    // Order stages using parent-child links
+    const byId = Object.fromEntries(stages.map(s => [s.id, s]));
+    const childOf = {};
+    for (const s of stages) {
+      const m = meta[s.id];
+      if (m?.parentId && byId[m.parentId]) {
+        childOf[s.id] = m.parentId;
+        s.perCraft = m.perCraft;
+      }
     }
-
-    document.getElementById('search-btn').addEventListener('click', search);
-    document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
-    document.getElementById('change-btn').addEventListener('click', changeSettlement);
-    document.getElementById('open-members').addEventListener('click', () =>
-      openPanel('members', 'members.html', { title: 'Members', width: 240, height: 300 }));
-    document.getElementById('open-builds').addEventListener('click', () =>
-      openPanel('construction', 'construction.html', { title: 'Builds', width: 260, height: 280 }));
-    document.getElementById('open-crafts').addEventListener('click', () =>
-      openPanel('crafts', 'crafts.html', { title: 'Crafts', width: 260, height: 240 }));
-    document.getElementById('open-inventory').addEventListener('click', () =>
-      openPanel('inventory', 'inventory.html', { title: 'Inventory', width: 260, height: 400 }));
-
-    if (settlement) {
-      document.getElementById('settlement-name').textContent = settlement.name;
-      showView('main');
-    } else {
-      showView('setup');
+    // Find root (no parent in this chain)
+    const root = stages.find(s => !childOf[s.id]);
+    const ordered = [];
+    let cur = root;
+    while (cur) {
+      ordered.push(cur);
+      cur = stages.find(s => childOf[s.id] === cur.id);
     }
-  </script>
+    for (const s of stages) { if (!ordered.includes(s)) ordered.push(s); }
+    return { label, stages: ordered };
+  }).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// ─── Craft planner engine ─────────────────────────────────────────────────
+function computePlan(chains) {
+  const recs = [];
+  for (const chain of chains) {
+    for (let i = 0; i < chain.stages.length - 1; i++) {
+      const inp = chain.stages[i];
+      const out = chain.stages[i + 1];
+      const perCraft = out.perCraft;
+      let convertible, blocked;
+      if (perCraft) {
+        convertible = Math.floor(inp.qty / perCraft);
+        blocked = convertible < 1;
+      } else {
+        convertible = null;
+        blocked = inp.qty < 5;
+      }
+      if (blocked) { recs.push({ chainLabel: chain.label, from: inp.name, fromQty: inp.qty, craft: out.name, toQty: out.qty, convertible: 0, blocked: true, score: 0, stageIndex: i }); continue; }
+      const effective = convertible ?? inp.qty;
+      const scarcity = effective / (out.qty + effective);
+      const score = scarcity * Math.log10(effective + 1);
+      recs.push({ chainLabel: chain.label, from: inp.name, fromQty: inp.qty, craft: out.name, toQty: out.qty, convertible, blocked: false, score, stageIndex: i });
+    }
+  }
+  return recs.sort((a, b) => b.score - a.score);
+}
+
+// ─── Poll functions ───────────────────────────────────────────────────────
+async function pollStorage() {
+  if (!settlement) return;
+  if (activeTab === 'storage') setTabContent('<div class="hint">Refreshing…</div>');
+  try {
+    const j = await bitwasp(`claims/${settlement.id}/inventories`);
+    const im = {};
+    for (const it of [...(j.items || []), ...(j.cargos || [])]) im[it.id] = { name: it.name, tag: it.tag || '' };
+    const totals = {};
+    for (const b of (j.buildings || [])) {
+      for (const slot of (b.inventory || [])) {
+        const c = slot.contents;
+        if (c?.item_id) totals[c.item_id] = (totals[c.item_id] || 0) + (c.quantity || 0);
+      }
+    }
+    const ids = Object.keys(totals);
+    const rootMap = await batchRootTags(ids);
+    itemsMap = {};
+    for (const [id, m] of Object.entries(im)) itemsMap[id] = m.name;
+    localStorage.setItem('bc-items-map', JSON.stringify(itemsMap));
+
+    allItems = ids.map(id => {
+      const m = im[id] || { name: `#${id}`, tag: '' };
+      const rootTag = rootMap[id] || m.tag || '';
+      const group = rootTag.split(' ')[0] || '?';
+      const stage = m.tag.startsWith(group + ' ') ? m.tag.slice(group.length + 1) : (m.tag || '?');
+      return { id, name: m.name, qty: totals[id], tag: stage, group };
+    });
+    chains = buildChains(allItems);
+  } catch(e) { console.error('storage poll:', e); }
+  if (activeTab === 'storage') renderTab('storage');
+}
+
+async function pollBuilds() {
+  if (!settlement) return;
+  try {
+    const j = await bitwasp(`claims/${settlement.id}/construction`);
+    buildsData = j.projects || [];
+  } catch(e) { buildsData = []; console.error('builds poll:', e); }
+  if (activeTab === 'builds') renderTab('builds');
+}
+
+async function pollJobs() {
+  if (!settlement) return;
+  try {
+    const j = await bitwasp(`crafts?claimEntityId=${encodeURIComponent(settlement.id)}`);
+    for (const it of (j.items || [])) itemsMap[it.id] = it.name;
+    jobsData = (j.craftResults || []).filter(x => !x.completed);
+  } catch(e) { jobsData = []; console.error('jobs poll:', e); }
+  if (activeTab === 'jobs') renderTab('jobs');
+}
+
+async function pollMembers() {
+  if (!settlement) return;
+  try {
+    const j = await bitwasp(`claims/${settlement.id}/citizens`);
+    const citizens = j.citizens || [];
+    membersData = await Promise.all(citizens.map(async c => {
+      try {
+        const pj = await bitwasp(`players?q=${encodeURIComponent(c.userName)}`);
+        const p = (pj.players || []).find(pl => (pl.username || '').toLowerCase() === c.userName.toLowerCase());
+        return { name: c.userName, online: !!p?.signedIn, last: p?.lastLoginTimestamp ?? null };
+      } catch { return { name: c.userName, online: false, last: null }; }
+    }));
+  } catch(e) { membersData = []; console.error('members poll:', e); }
+  updateOnlineBadge();
+  if (activeTab === 'members') renderTab('members');
+}
+
+function updateOnlineBadge() {
+  const badge = document.getElementById('online-badge');
+  if (!badge) return;
+  const online = (membersData || []).filter(m => m.online).length;
+  if (online > 0) { badge.textContent = online; badge.style.display = ''; }
+  else badge.style.display = 'none';
+}
+
+function pollAll() {
+  pollStorage();
+  pollBuilds();
+  pollJobs();
+  pollMembers();
+}
+
+// ─── Tab rendering ────────────────────────────────────────────────────────
+function setTabContent(html) {
+  const el = document.getElementById('tab-content');
+  if (el) el.innerHTML = html;
+}
+
+function renderTab(id) {
+  const html = {
+    storage: renderStorage,
+    builds:  renderBuilds,
+    jobs:    renderJobs,
+    members: renderMembers,
+  }[id]?.() || '';
+  setTabContent(html);
+  bindTabEvents(id);
+}
+
+function renderStorage() {
+  let out = `<div class="mode-toggle">
+    <button class="${storageMode==='plan'?'on':''}" data-mode="plan">Craft plan</button>
+    <button class="${storageMode==='items'?'on':''}" data-mode="items">All items</button>
+  </div>`;
+  if (storageMode === 'plan') out += renderCraftPlan();
+  else out += renderAllItems();
+  return out;
+}
+
+function renderCraftPlan() {
+  if (!chains) return '<div class="hint">Loading inventory…</div>';
+  if (chains.length === 0) return '<div class="hint">No chain data yet.</div>';
+  const plan = computePlan(chains);
+  return renderNextUp(plan) + renderPipeline(chains, plan);
+}
+
+function renderNextUp(plan) {
+  const top = plan.find(r => !r.blocked);
+  if (!top) return '';
+  const convStr = top.convertible != null ? `≈${fmt(top.convertible)}` : 'some';
+  return `<div class="nextup">
+    <div class="nextup-tag">NEXT&nbsp;UP</div>
+    <div class="nextup-body">
+      <div class="nextup-line">
+        <span class="nextup-verb">Craft</span>
+        <span class="nextup-item">${esc(top.craft)}</span>
+      </div>
+      <div class="nextup-sub">
+        <b>${fmt(top.fromQty)}</b> ${esc(top.from)} sitting idle
+        <span class="nextup-arrow">→</span>
+        make up to <b>${convStr}</b>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderPipeline(chains, plan) {
+  if (!chains.length) return '<div class="hint">No crafting chains found.</div>';
+  const sorted = [...chains].sort((a, b) => {
+    const sa = plan.filter(r => r.chainLabel === a.label && !r.blocked).reduce((m, r) => Math.max(m, r.score), 0);
+    const sb = plan.filter(r => r.chainLabel === b.label && !r.blocked).reduce((m, r) => Math.max(m, r.score), 0);
+    return sb - sa;
+  });
+  return '<div class="lanes">' + sorted.map(chain => {
+    const best = plan.find(r => r.chainLabel === chain.label && !r.blocked);
+    let pipe = '';
+    chain.stages.forEach((st, i) => {
+      const isCraftTarget = best && best.stageIndex + 1 === i;
+      const isHotArrow = best && best.stageIndex === i;
+      if (i > 0) {
+        const convStr = isHotArrow && best.convertible != null ? `+${fmt(best.convertible)}` : '';
+        pipe += `<div class="arrow${isHotArrow?' arrow-hot':''}">
+          <span class="arrow-glyph">→</span>
+          ${convStr ? `<span class="arrow-conv">${esc(convStr)}</span>` : ''}
+        </div>`;
+      }
+      pipe += `<div class="node${isCraftTarget?' node-target':''}">
+        <div class="node-name" title="${esc(st.name)}">${esc(st.tag || st.name)}</div>
+        <div class="node-qty">${fmt(st.qty)}</div>
+      </div>`;
+    });
+    const rec = best ? `<div class="lane-rec">
+      <span>Craft <b>${esc(best.craft)}</b> — ${fmt(best.fromQty)} ${esc(best.from)} ready</span>
+      ${best.convertible != null ? `<span class="lane-rec-num">≈${fmt(best.convertible)}</span>` : ''}
+    </div>` : '';
+    return `<div class="lane">
+      <div class="lane-head"><span class="lane-label">${esc(chain.label)}</span></div>
+      <div class="pipe">${pipe}</div>
+      ${rec}
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderAllItems() {
+  if (!allItems) return '<div class="hint">Loading…</div>';
+  const q = (window._aiSearch || '').toLowerCase();
+  const sort = window._aiSort || 'qty';
+  let rows = allItems.filter(r => !q || r.name.toLowerCase().includes(q));
+  rows.sort((a, b) => sort === 'qty' ? b.qty - a.qty : a.name.localeCompare(b.name));
+  const ctrl = `<div class="ai-ctrl">
+    <input class="inp" id="ai-search" placeholder="Search items…" value="${esc(q)}">
+    <div class="seg">
+      <button class="${sort === 'qty' ? 'on' : ''}" data-sort="qty">Qty</button>
+      <button class="${sort === 'name' ? 'on' : ''}" data-sort="name">A–Z</button>
+    </div>
+  </div>`;
+  if (!rows.length) return ctrl + '<div class="hint">No items found.</div>';
+  return ctrl +
+  rows.map(r => `<div class="ai-row">
+    ${r.group && r.group !== '?' ? `<span class="ai-tag">${esc(r.group)}</span>` : ''}
+    <span class="ai-name">${esc(r.name)}</span>
+    <span class="ai-qty">${fmt(r.qty)}</span>
+  </div>`).join('');
+}
+
+function renderBuilds() {
+  if (!buildsData) return '<div class="hint">Loading…</div>';
+  if (!buildsData.length) return '<div class="hint">No active builds.</div>';
+  const nameMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+  return '<div class="builds">' + buildsData.map(p => {
+    const req = p.actionsRequired || 0;
+    const prog = p.progress || 0;
+    const pct = req ? Math.round(prog / req * 100) : 0;
+    const done = pct >= 100;
+    const mats = [...(p.items || []), ...(p.cargos || [])].map(m => {
+      const name = nameMap[m.item_id] || `#${m.item_id}`;
+      return `<span class="need"><span>${esc(name)}</span><b>${fmt(m.quantity)}</b></span>`;
+    }).join('');
+    return `<div class="card">
+      <div class="card-head">
+        <span class="card-title">${esc(p.buildingName || p.recipeName || 'Build')}</span>
+        <span class="card-pct${done?' pct-done':''}">${done?'done':pct+'%'}</span>
+      </div>
+      <div class="track"><span class="track-fill${done?' done':''}" style="width:${pct}%;display:block;height:100%;border-radius:3px"></span></div>
+      ${mats ? `<div class="needs">${mats}</div>` : ''}
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderJobs() {
+  if (!jobsData) return '<div class="hint">Loading…</div>';
+  if (!jobsData.length) return '<div class="hint">No active crafts.</div>';
+  return '<div class="jobs">' + jobsData.map(job => {
+    const first = (job.craftedItem || [])[0];
+    const id = first ? (first.item_id ?? first.id ?? first.entityId) : null;
+    const name = (id && itemsMap[id]) ? itemsMap[id] : (job.recipeName || job.buildingName || 'Craft');
+    const member = job.ownerUsername || job.memberName || '';
+    const qty = job.craftCount || 0;
+    const prog = job.progress || 0;
+    const total = job.totalActionsRequired || 0;
+    const pct = total > 0 ? Math.round(prog / total * 100) : 0;
+    const done = pct >= 100;
+    return `<div class="card">
+      <div class="card-head">
+        <span class="card-title">${esc(name)}${qty > 1 ? ` <span class="job-count">×${qty}</span>` : ''}</span>
+        ${member ? `<span class="job-owner">${esc(member)}</span>` : ''}
+        ${total > 0 ? `<span class="card-pct${done?' pct-done':''}">${done?'ready':pct+'%'}</span>` : ''}
+      </div>
+      ${total > 0 ? `<div class="track"><span class="track-fill${done?' done':''}" style="width:${pct}%;display:block;height:100%;border-radius:3px"></span></div>` : ''}
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderMembers() {
+  if (!membersData) return '<div class="hint">Loading…</div>';
+  if (!membersData.length) return '<div class="hint">No members found.</div>';
+  const sorted = [...membersData].sort((a, b) => {
+    if (a.online !== b.online) return a.online ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  const online = sorted.filter(m => m.online).length;
+  return `<div class="members">
+    <div class="members-count"><b>${online}</b> of ${sorted.length} online</div>
+    ${sorted.map(m => {
+      const st = m.online ? 'online' : m.last ? relTime(m.last) : 'offline';
+      return `<div class="m-row">
+        <span class="dot${m.online?'':' off'}"></span>
+        <span class="m-name">${esc(m.name)}</span>
+        <span class="m-status">${esc(st)}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ─── Event binding ────────────────────────────────────────────────────────
+function bindTabEvents(id) {
+  if (id === 'storage') {
+    document.querySelectorAll('.mode-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        storageMode = btn.dataset.mode;
+        renderTab('storage');
+      });
+    });
+    if (storageMode === 'items') bindAllItemsEvents();
+  }
+}
+
+function bindAllItemsEvents() {
+  const inp = document.getElementById('ai-search');
+  if (inp) {
+    inp.addEventListener('input', e => { window._aiSearch = e.target.value; renderTab('storage'); });
+    inp.focus();
+  }
+  document.querySelectorAll('.seg button').forEach(btn => {
+    btn.addEventListener('click', () => { window._aiSort = btn.dataset.sort; renderTab('storage'); });
+  });
+}
+
+// ─── App init ─────────────────────────────────────────────────────────────
+function showView(id) {
+  document.getElementById('view-setup').style.display = id === 'setup' ? '' : 'none';
+  document.getElementById('view-main').style.display  = id === 'main'  ? '' : 'none';
+}
+
+function startMain() {
+  document.getElementById('settlement-label').textContent = settlement.name;
+  document.getElementById('settlement-tier').style.display = 'none';
+  document.getElementById('footer-name').textContent = settlement.name;
+  showView('main');
+  renderTab(activeTab);
+  pollAll();
+  startPollClock(30000);
+  onPollTick(() => {
+    if (activeTab === 'storage') pollStorage();
+    else if (activeTab === 'builds') pollBuilds();
+    else if (activeTab === 'jobs') pollJobs();
+    else if (activeTab === 'members') pollMembers();
+  });
+}
+
+// Settlement search
+async function search() {
+  const q = document.getElementById('search-input').value.trim();
+  if (q.length < 2) return;
+  const res = document.getElementById('search-results');
+  res.innerHTML = '<div class="hint">Searching…</div>';
+  try {
+    const j = await bitwasp(`claims?q=${encodeURIComponent(q)}&limit=8`);
+    const hits = j.claims || [];
+    if (!hits.length) { res.innerHTML = '<div class="hint">No settlements found.</div>'; return; }
+    res.innerHTML = hits.map(c =>
+      `<div class="search-result">
+        <span class="res-name">${esc(c.name)}</span>
+        <button class="res-pick" data-id="${c.entityId}" data-name="${esc(c.name)}">Select</button>
+      </div>`
+    ).join('');
+    res.querySelectorAll('.res-pick').forEach(btn => btn.addEventListener('click', () => {
+      settlement = { id: btn.dataset.id, name: btn.dataset.name };
+      setSettlement(settlement);
+      startMain();
+    }));
+  } catch(e) { res.innerHTML = `<div class="hint" style="color:var(--bad)">${esc(String(e))}</div>`; }
+}
+
+// Tab switching
+document.getElementById('tabs').addEventListener('click', e => {
+  const btn = e.target.closest('.tab');
+  if (!btn) return;
+  const id = btn.dataset.tab;
+  if (id === activeTab) return;
+  activeTab = id;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
+  renderTab(id);
+  if (id === 'builds' && !buildsData) pollBuilds();
+  if (id === 'jobs' && !jobsData) pollJobs();
+  if (id === 'members' && !membersData) pollMembers();
+});
+
+// Window chrome — T is declared in common.js
+let win = T?.window?.getCurrentWindow?.();
+
+document.getElementById('drag-bar-main').addEventListener('mousedown', e => {
+  if (e.button === 0 && !e.target.closest('.winbtn')) win?.startDragging?.();
+});
+document.getElementById('drag-bar-setup').addEventListener('mousedown', e => {
+  if (e.button === 0 && !e.target.closest('.winbtn')) win?.startDragging?.();
+});
+document.getElementById('close-btn-main').addEventListener('click', () => win?.close?.());
+document.getElementById('close-btn-setup').addEventListener('click', () => win?.close?.());
+document.getElementById('min-btn').addEventListener('click', () => win?.minimize?.());
+document.getElementById('change-btn').addEventListener('click', () => {
+  setSettlement(null); settlement = null;
+  allItems = null; chains = null; buildsData = null; jobsData = null; membersData = null;
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').innerHTML = '';
+  showView('setup');
+});
+document.getElementById('search-btn').addEventListener('click', search);
+document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+
+// Save position
+if (win) {
+  let _posTimer;
+  win.listen('tauri://move', () => {
+    clearTimeout(_posTimer);
+    _posTimer = setTimeout(async () => {
+      try {
+        const pos = await win.outerPosition();
+        const sf = await win.scaleFactor();
+        localStorage.setItem('bc-pos-main', JSON.stringify({ x: Math.round(pos.x / sf), y: Math.round(pos.y / sf) }));
+      } catch {}
+    }, 400);
+  });
+}
+
+// Collapse
+document.getElementById('collapse-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('collapse-btn');
+  const col = document.getElementById('main-collapsible');
+  const isCollapsed = btn.textContent.trim() === '▼';
+  if (isCollapsed) {
+    const h = parseInt(localStorage.getItem('bc-h-main') || '500');
+    await T?.core?.invoke('set_window_size', { width: 360, height: h });
+    btn.textContent = '▲';
+    col.style.display = '';
+  } else {
+    if (!win) { btn.textContent = '▼'; col.style.display = 'none'; return; }
+    const sz = await win.innerSize();
+    const sf = await win.scaleFactor();
+    localStorage.setItem('bc-h-main', Math.round(sz.height / sf));
+    await T?.core?.invoke('set_window_size', { width: 360, height: 34 });
+    btn.textContent = '▼';
+    col.style.display = 'none';
+  }
+});
+
+// Focus watcher
+(async () => {
+  if (!win) return;
+  await win.setAlwaysOnTop(true);
+  setInterval(async () => {
+    try {
+      const active = await T.core.invoke('is_game_focused');
+      await win.setAlwaysOnTop(active);
+    } catch {}
+  }, 700);
+})();
+
+// Boot
+if (settlement) startMain();
+else showView('setup');
+</script>
 </body>
 </html>
-

@@ -15,6 +15,7 @@ async function bitwasp(path) {
 // Auto-hide overlay when BitCraft loses focus.
 // Polls every 700ms; respects the pin button (watcher disabled when unpinned).
 (async function startFocusWatcher() {
+  if (!T?.window) return;
   const win = T.window.getCurrentWindow();
   await win.setAlwaysOnTop(true);
   setInterval(async () => {
