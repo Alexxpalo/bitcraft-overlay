@@ -131,12 +131,43 @@ async function fitWindow(maxH = 420) {
     if (btn && btn.textContent.trim() === '▼') return; // collapsed, don't touch
     const body = document.querySelector('.collapsible');
     if (!body) return;
-    const h = Math.min(body.scrollHeight + 26 + 1, maxH); // 26 = drag bar
+    const bannerEl = document.getElementById('update-banner');
+    const bannerH = (bannerEl && bannerEl.style.display !== 'none') ? bannerEl.offsetHeight : 0;
+    const h = Math.min(body.scrollHeight + 26 + bannerH + 1, maxH); // 26 = drag bar
     const win = T.window.getCurrentWindow();
     const sz  = await win.innerSize();
     const sf  = await win.scaleFactor();
     await T.core.invoke('set_window_size', { width: Math.round(sz.width / sf), height: h });
   } catch(e) {}
+}
+
+async function checkForUpdate() {
+  if (!T?.core) return;
+  try {
+    const ver = await T.core.invoke('check_for_update');
+    if (!ver) return;
+    if (localStorage.getItem('bc-dismissed-update') === ver) return;
+    document.getElementById('update-ver').textContent = ver;
+    document.getElementById('update-banner').style.display = 'flex';
+  } catch(e) {}
+}
+
+async function doInstallUpdate() {
+  if (!T?.core) return;
+  document.getElementById('update-banner').innerHTML = '<span>Ladataan päivitystä…</span>';
+  try {
+    await T.core.invoke('install_update');
+  } catch(e) {
+    document.getElementById('update-banner').innerHTML =
+      `<span>Virhe: ${esc(String(e))}</span><button onclick="dismissUpdate()">✕</button>`;
+  }
+}
+
+function dismissUpdate() {
+  const ver = document.getElementById('update-ver')?.textContent;
+  if (ver) localStorage.setItem('bc-dismissed-update', ver);
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.style.display = 'none';
 }
 
 function relTime(ts) {

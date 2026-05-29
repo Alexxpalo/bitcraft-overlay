@@ -1,6 +1,6 @@
 {
   "productName": "BitCraft Overlay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.bitcraft.overlay",
   "build": {
     "frontendDist": "../src"
@@ -35,5 +35,14 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERCMzJCQ0ZBODBFRDVCRTYKUldUbVcrMkErcnd5MjhzYmkrbGFacVE2Y1RqbXlJZyszNk9LTCswSmh2ZE01WDVDUXdKN2ZIR1IK",
+      "endpoints": [
+        "https://github.com/Alexxpalo/bitcraft-overlay/releases/latest/download/latest.json"
+      ],
+      "dialog": false
+    }
   }
 }

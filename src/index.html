@@ -13,6 +13,68 @@
     #view-main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     #view-setup { display: flex; flex-direction: column; }
     .collapsible { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    #update-banner {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; font-size: 11px;
+      background: color-mix(in oklab, #3a86d8 18%, transparent);
+      border-bottom: 1px solid color-mix(in oklab, #3a86d8 40%, transparent);
+    }
+    #update-banner span { flex: 1; color: var(--txt); }
+    #update-banner button {
+      font-size: 10px; padding: 2px 7px; border-radius: 4px; cursor: pointer;
+      background: none; border: 1px solid var(--line); color: var(--dim2);
+      font-family: var(--mono);
+    }
+    #update-banner button:first-of-type {
+      background: #3a86d8; border-color: #3a86d8; color: #fff;
+    }
+    #update-banner button:first-of-type:hover { opacity: 0.85; }
+    .cp-stage { margin-bottom: 1px; }
+    .cp-shd {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 10px; font-size: 11px; font-weight: 700;
+      color: var(--txt); background: var(--bg2); border-top: 1px solid var(--line);
+    }
+    .cp-sbadge { font-size: 9px; font-family: var(--mono); color: var(--dim2); background: var(--bg3); border-radius: 8px; padding: 1px 5px; }
+    .cp-group { border-left: 2px solid var(--line); margin: 0 8px 3px 14px; }
+    .cp-gtag { display: flex; align-items: center; gap: 4px; padding: 3px 7px; font-size: 10px; color: var(--accent); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .cp-gbadge { font-size: 9px; font-family: var(--mono); color: var(--dim2); background: var(--bg3); border-radius: 6px; padding: 0 4px; }
+    .cp-row { display: flex; align-items: center; justify-content: space-between; padding: 3px 7px; border-top: 1px solid color-mix(in oklab, var(--line) 25%, transparent); }
+    .cp-name { flex: 1; font-size: 11px; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 6px; }
+    .cp-right { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .cp-qty { font-size: 11px; font-family: var(--mono); color: var(--dim2); }
+    .cp-make { font-size: 10px; font-family: var(--mono); color: var(--good); }
+    .cp-need { font-size: 11px; font-family: var(--mono); }
+    .cp-need.ok { color: var(--good); }
+    .cp-need.short { color: var(--bad); }
+    .cp-goal-inp {
+      width: 44px; font-size: 10px; font-family: var(--mono); text-align: right;
+      background: var(--bg3); border: 1px solid var(--line); border-radius: 3px;
+      color: var(--dim); padding: 1px 4px; -webkit-appearance: none; appearance: none;
+    }
+    .cp-goal-inp:focus { outline: none; border-color: var(--accent); color: var(--txt); }
+    .cp-goal-inp::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .cp-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px 2px; }
+    .cp-goal-hint { font-size: 10px; color: var(--dim2); font-family: var(--mono); }
+    .cp-clear-goals {
+      font-size: 10px; padding: 2px 8px; background: none; cursor: pointer;
+      border: 1px solid var(--line); border-radius: 4px; color: var(--dim2); font-family: var(--mono);
+    }
+    .cp-clear-goals:hover { border-color: var(--bad); color: var(--bad); }
+    .plan-editor { padding: 6px 8px 0; }
+    .plan-search-inp { width: 100% !important; box-sizing: border-box !important; margin-bottom: 4px; flex: none !important; direction: ltr; text-align: left; }
+    .plan-results { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px; margin-bottom: 6px; }
+    .plan-result { display: flex; justify-content: space-between; align-items: center; padding: 5px 9px; cursor: pointer; border-top: 1px solid color-mix(in oklab, var(--line) 30%, transparent); font-size: 11px; color: var(--txt); }
+    .plan-result:first-child { border-top: none; }
+    .plan-result:hover { background: var(--bg3); }
+    .plan-result-have { font-size: 10px; color: var(--dim2); font-family: var(--mono); flex-shrink: 0; margin-left: 8px; }
+    .plan-items { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px; margin-bottom: 4px; }
+    .plan-items-head { display: flex; justify-content: space-between; align-items: center; padding: 5px 9px; font-size: 11px; font-weight: 600; color: var(--txt); border-bottom: 1px solid var(--line); }
+    .plan-item { display: flex; align-items: center; gap: 6px; padding: 4px 9px; border-top: 1px solid color-mix(in oklab, var(--line) 25%, transparent); }
+    .plan-item-name { flex: 1; font-size: 11px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plan-remove { background: none; border: none; color: var(--dim2); cursor: pointer; font-size: 11px; padding: 0 2px; flex-shrink: 0; line-height: 1; }
+    .plan-remove:hover { color: var(--bad); }
+    .plan-divider { font-size: 10px; font-weight: 700; color: var(--dim2); text-transform: uppercase; letter-spacing: .08em; padding: 6px 1px 3px; }
   </style>
 </head>
 <body>
@@ -46,6 +108,12 @@
       <button class="winbtn close" id="close-btn-main" title="Close">✕</button>
     </div>
 
+    <div id="update-banner" style="display:none">
+      <span>Päivitys saatavilla: <strong id="update-ver"></strong></span>
+      <button onclick="doInstallUpdate()">Asenna</button>
+      <button onclick="dismissUpdate()">✕</button>
+    </div>
+
     <div class="collapsible" id="main-collapsible">
       <div class="tabs" id="tabs">
         <button class="tab on" data-tab="storage">Storage</button>
@@ -61,6 +129,7 @@
       <div class="footbar">
         <span class="region" id="footer-name"></span>
         <span class="grow"></span>
+        <span class="version-label">v0.2.0</span>
         <button class="change-btn" id="change-btn">change</button>
       </div>
     </div>
@@ -79,6 +148,8 @@ let buildsData = null;
 let jobsData = null;
 let membersData = null;
 let itemsMap = {};
+let craftGoals = JSON.parse(localStorage.getItem('bc-goals') || '{}');
+let _planSearchResults = null; // null=idle, 'loading', []=results
 
 const fmt = n => Number(n).toLocaleString('en-US');
 // esc() comes from common.js
@@ -104,6 +175,12 @@ async function fetchChainMeta(id) {
     }
     const meta = { tag: j.item?.tag || '', parentId, perCraft };
     const fresh = chainCache(); fresh[id] = meta; saveChainCache(fresh);
+    // Also save name to bc-items-map
+    const name = j.item?.name || j.name;
+    if (name) {
+      const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+      if (!nm[id]) { nm[id] = name; localStorage.setItem('bc-items-map', JSON.stringify(nm)); }
+    }
     return meta;
   } catch {
     const meta = { tag: '', parentId: null, perCraft: null };
@@ -112,57 +189,48 @@ async function fetchChainMeta(id) {
   }
 }
 
-async function getRootTag(id, depth = 0) {
-  if (depth > 6) return null;
-  const meta = await fetchChainMeta(id);
-  if (!meta.parentId) return meta.tag || null;
-  return getRootTag(meta.parentId, depth + 1);
-}
-
-async function batchRootTags(ids) {
-  const result = {};
+// Fetch meta for all ids without recursion — one API call per uncached item.
+async function batchFetchMeta(ids) {
   const BATCH = 6;
   for (let i = 0; i < ids.length; i += BATCH) {
     const slice = ids.slice(i, i + BATCH);
-    await Promise.all(slice.map(async id => {
-      result[id] = await getRootTag(id);
-    }));
+    const cache = chainCache();
+    const uncached = slice.filter(id => cache[id] === undefined);
+    if (uncached.length) await Promise.all(uncached.map(id => fetchChainMeta(id)));
   }
-  return result;
 }
 
-// ─── Build chains from flat items ────────────────────────────────────────
-function buildChains(rows) {
-  const byGroup = {};
-  for (const row of rows) {
-    if (row.group && row.group !== '?') {
-      if (!byGroup[row.group]) byGroup[row.group] = [];
-      byGroup[row.group].push(row);
+// Build chains using parentId links — groups items that share a refining chain.
+// root = raw material (no recipe parent in inventory); chain goes root → … → most-refined.
+function buildChainsFromMeta(items) {
+  const meta = chainCache();
+  const itemIds = new Set(items.map(i => i.id));
+
+  // Map each item to its parent if that parent is also in inventory.
+  const parent = {};
+  for (const item of items) {
+    const m = meta[item.id];
+    if (m?.parentId && itemIds.has(m.parentId)) {
+      parent[item.id] = m.parentId;
+      item.perCraft = m.perCraft;
     }
   }
 
-  const meta = chainCache();
-  return Object.entries(byGroup).map(([label, stages]) => {
-    // Order stages using parent-child links
-    const byId = Object.fromEntries(stages.map(s => [s.id, s]));
-    const childOf = {};
-    for (const s of stages) {
-      const m = meta[s.id];
-      if (m?.parentId && byId[m.parentId]) {
-        childOf[s.id] = m.parentId;
-        s.perCraft = m.perCraft;
-      }
-    }
-    // Find root (no parent in this chain)
-    const root = stages.find(s => !childOf[s.id]);
-    const ordered = [];
+  // Roots are items that have children but no in-inventory parent.
+  const hasChildren = new Set(Object.values(parent));
+  const roots = items.filter(i => !parent[i.id] && hasChildren.has(i.id));
+
+  return roots.map(root => {
+    const chain = [root];
     let cur = root;
-    while (cur) {
-      ordered.push(cur);
-      cur = stages.find(s => childOf[s.id] === cur.id);
+    for (;;) {
+      const child = items.find(i => parent[i.id] === cur.id);
+      if (!child) break;
+      chain.push(child);
+      cur = child;
     }
-    for (const s of stages) { if (!ordered.includes(s)) ordered.push(s); }
-    return { label, stages: ordered };
+    const label = itemsMap[root.id] || root.name;
+    return { label, stages: chain };
   }).sort((a, b) => a.label.localeCompare(b.label));
 }
 
@@ -208,19 +276,17 @@ async function pollStorage() {
       }
     }
     const ids = Object.keys(totals);
-    const rootMap = await batchRootTags(ids);
     itemsMap = {};
     for (const [id, m] of Object.entries(im)) itemsMap[id] = m.name;
     localStorage.setItem('bc-items-map', JSON.stringify(itemsMap));
 
+    await batchFetchMeta(ids);
+
     allItems = ids.map(id => {
       const m = im[id] || { name: `#${id}`, tag: '' };
-      const rootTag = rootMap[id] || m.tag || '';
-      const group = rootTag.split(' ')[0] || '?';
-      const stage = m.tag.startsWith(group + ' ') ? m.tag.slice(group.length + 1) : (m.tag || '?');
-      return { id, name: m.name, qty: totals[id], tag: stage, group };
+      return { id, name: m.name, qty: totals[id], tag: m.tag };
     });
-    chains = buildChains(allItems);
+    chains = buildChainsFromMeta(allItems);
   } catch(e) { console.error('storage poll:', e); }
   if (activeTab === 'storage') renderTab('storage');
 }
@@ -304,67 +370,206 @@ function renderStorage() {
 }
 
 function renderCraftPlan() {
-  if (!chains) return '<div class="hint">Loading inventory…</div>';
-  if (chains.length === 0) return '<div class="hint">No chain data yet.</div>';
-  const plan = computePlan(chains);
-  return renderNextUp(plan) + renderPipeline(chains, plan);
+  if (!chains || !allItems) return '<div class="hint">Loading inventory…</div>';
+  if (chains.length === 0) return '<div class="hint">No crafting chains found.</div>';
+  return renderPlanEditor() + renderByStage();
 }
 
-function renderNextUp(plan) {
-  const top = plan.find(r => !r.blocked);
-  if (!top) return '';
-  const convStr = top.convertible != null ? `≈${fmt(top.convertible)}` : 'some';
-  return `<div class="nextup">
-    <div class="nextup-tag">NEXT&nbsp;UP</div>
-    <div class="nextup-body">
-      <div class="nextup-line">
-        <span class="nextup-verb">Craft</span>
-        <span class="nextup-item">${esc(top.craft)}</span>
+async function doPlanSearch(q) {
+  if (q.length < 2) { _planSearchResults = null; renderTab('storage'); return; }
+  // No loading re-render — keeps input alive while typing
+  try {
+    const j = await bitwasp(`items?q=${encodeURIComponent(q)}`);
+    if ((window._planSearch || '') !== q) return; // stale, discard
+    const arr = j.items || j.results || (Array.isArray(j) ? j : []);
+    const invById = Object.fromEntries((allItems || []).map(i => [String(i.id), i.qty]));
+    _planSearchResults = arr.slice(0, 10).map(it => ({
+      id: String(it.id ?? it.entityId ?? it.item_id),
+      name: it.name || it.displayName || `#${it.id}`,
+      qty: invById[String(it.id ?? it.entityId ?? it.item_id)] ?? 0,
+    }));
+    const map = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+    let dirty = false;
+    for (const r of _planSearchResults) { if (!map[r.id]) { map[r.id] = r.name; dirty = true; } }
+    if (dirty) localStorage.setItem('bc-items-map', JSON.stringify(map));
+  } catch(e) { _planSearchResults = []; }
+  if ((window._planSearch || '') === q) renderTab('storage');
+}
+
+async function ensureChainCached(id, depth = 0) {
+  if (depth > 10) return;
+  const m = await fetchChainMeta(id);
+  if (m?.parentId) await ensureChainCached(m.parentId, depth + 1);
+}
+
+let _resolvingNames = false;
+async function resolveUnknownNames() {
+  if (_resolvingNames) return;
+  const needs = computeNeeds();
+  if (!Object.keys(needs).length) return;
+  const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+  const invIds = new Set((allItems || []).map(i => i.id));
+  const unknown = Object.keys(needs).filter(id => !nm[id] && !invIds.has(id));
+  if (!unknown.length) return;
+  _resolvingNames = true;
+  try {
+    const fresh = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+    let dirty = false;
+    for (let i = 0; i < unknown.length; i += 3) {
+      const batch = unknown.slice(i, i + 3);
+      const results = await Promise.all(batch.map(async id => {
+        try { const j = await bitwasp(`items/${id}`); return { id, name: j.item?.name || j.name }; }
+        catch { return null; }
+      }));
+      for (const r of results) {
+        if (r?.name && !fresh[r.id]) { fresh[r.id] = r.name; dirty = true; }
+      }
+    }
+    if (dirty) { localStorage.setItem('bc-items-map', JSON.stringify(fresh)); renderTab('storage'); }
+  } finally { _resolvingNames = false; }
+}
+
+function renderPlanEditor() {
+  const q = window._planSearch || '';
+  const invById = Object.fromEntries((allItems || []).map(i => [i.id, i.qty]));
+  let resultsHtml = '';
+  if (q.length >= 1) {
+    if (Array.isArray(_planSearchResults) && _planSearchResults.length) {
+      resultsHtml = `<div class="plan-results">${_planSearchResults.map(i =>
+        `<div class="plan-result" data-id="${esc(i.id)}">
+          <span>${esc(i.name)}</span>
+          <span class="plan-result-have">${fmt(i.qty)} in stock</span>
+        </div>`).join('')}</div>`;
+    } else if (Array.isArray(_planSearchResults)) {
+      resultsHtml = `<div class="plan-results"><div class="hint" style="padding:6px 9px">No match</div></div>`;
+    }
+  }
+  const namesMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+  const planItems = Object.entries(craftGoals).map(([id, qty]) => {
+    const inv = (allItems || []).find(i => i.id === id);
+    const name = inv?.name || namesMap[id];
+    return name ? { id, name, qty } : null;
+  }).filter(Boolean);
+  let planHtml = '';
+  if (planItems.length) {
+    planHtml = `<div class="plan-items">
+      <div class="plan-items-head">
+        <span>Plan (${planItems.length})</span>
+        <button class="cp-clear-goals">Clear all</button>
       </div>
-      <div class="nextup-sub">
-        <b>${fmt(top.fromQty)}</b> ${esc(top.from)} sitting idle
-        <span class="nextup-arrow">→</span>
-        make up to <b>${convStr}</b>
-      </div>
+      ${planItems.map(item => `<div class="plan-item">
+        <span class="plan-item-name" title="${esc(item.name)}">${esc(item.name)}</span>
+        <input class="cp-goal-inp plan-qty" data-id="${esc(item.id)}" type="number" min="1" value="${item.qty}">
+        <button class="plan-remove" data-id="${esc(item.id)}">✕</button>
+      </div>`).join('')}
     </div>
+    <div class="plan-divider">Requirements</div>`;
+  }
+  return `<div class="plan-editor">
+    <input class="inp plan-search-inp" id="plan-search" dir="ltr" placeholder="Add items to plan…" value="${esc(window._planSearch || '')}" autocomplete="off">
+    ${resultsHtml}${planHtml}
   </div>`;
 }
 
-function renderPipeline(chains, plan) {
-  if (!chains.length) return '<div class="hint">No crafting chains found.</div>';
-  const sorted = [...chains].sort((a, b) => {
-    const sa = plan.filter(r => r.chainLabel === a.label && !r.blocked).reduce((m, r) => Math.max(m, r.score), 0);
-    const sb = plan.filter(r => r.chainLabel === b.label && !r.blocked).reduce((m, r) => Math.max(m, r.score), 0);
-    return sb - sa;
-  });
-  return '<div class="lanes">' + sorted.map(chain => {
-    const best = plan.find(r => r.chainLabel === chain.label && !r.blocked);
-    let pipe = '';
-    chain.stages.forEach((st, i) => {
-      const isCraftTarget = best && best.stageIndex + 1 === i;
-      const isHotArrow = best && best.stageIndex === i;
-      if (i > 0) {
-        const convStr = isHotArrow && best.convertible != null ? `+${fmt(best.convertible)}` : '';
-        pipe += `<div class="arrow${isHotArrow?' arrow-hot':''}">
-          <span class="arrow-glyph">→</span>
-          ${convStr ? `<span class="arrow-conv">${esc(convStr)}</span>` : ''}
+function computeNeeds() {
+  if (!chains) return {};
+  const needs = {};
+  for (const [id, qty] of Object.entries(craftGoals)) {
+    if (qty > 0) needs[id] = qty;
+  }
+  // Cascade through inventory-based chains
+  for (const chain of chains) {
+    for (let i = chain.stages.length - 1; i >= 1; i--) {
+      const out = chain.stages[i];
+      const inp = chain.stages[i - 1];
+      const needed = needs[out.id] || 0;
+      if (!needed) continue;
+      const toMake = Math.max(0, needed - out.qty);
+      if (toMake > 0 && out.perCraft) {
+        needs[inp.id] = (needs[inp.id] || 0) + Math.ceil(toMake * out.perCraft);
+      }
+    }
+  }
+  // Cascade through bc-chain-v4 cache for items not in inventory chains
+  const meta = chainCache();
+  const invById = Object.fromEntries((allItems || []).map(i => [i.id, i]));
+  const chainIds = new Set();
+  for (const chain of chains) chain.stages.forEach(st => chainIds.add(st.id));
+  const visited = new Set();
+  function cascade(id) {
+    if (visited.has(id) || chainIds.has(id)) return;
+    visited.add(id);
+    const needed = needs[id] || 0;
+    if (!needed) return;
+    const m = meta[id];
+    if (!m?.parentId) return;
+    const haveQty = invById[id]?.qty || 0;
+    const toMake = Math.max(0, needed - haveQty);
+    if (toMake > 0 && m.perCraft) {
+      needs[m.parentId] = (needs[m.parentId] || 0) + Math.ceil(toMake * m.perCraft);
+      cascade(m.parentId);
+    }
+  }
+  for (const id of Object.keys(craftGoals)) cascade(id);
+  return needs;
+}
+
+function renderByStage() {
+  const needs = computeNeeds();
+  if (!Object.keys(needs).length) return '';
+  const namesMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+  const meta = chainCache();
+  const invById = Object.fromEntries((allItems || []).map(i => [i.id, i]));
+  // stage depth: from chains first, then bc-chain-v4 parentId links
+  const stageOf = {};
+  for (const chain of chains) chain.stages.forEach((st, i) => { stageOf[st.id] = i; });
+  function depthOf(id, seen = new Set()) {
+    if (stageOf[id] !== undefined) return stageOf[id];
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const m = meta[id];
+    if (!m?.parentId) return 0;
+    return depthOf(m.parentId, seen) + 1;
+  }
+  const byStage = {};
+  for (const id of Object.keys(needs)) {
+    const inv = invById[id];
+    const name = inv?.name || namesMap[id] || `#${id}`;
+    const qty = inv?.qty ?? 0;
+    const tag = inv?.tag || meta[id]?.tag || 'Other';
+    const s = depthOf(id);
+    ((byStage[s] ??= {})[tag] ??= []).push({ id, name, qty });
+  }
+  if (!Object.keys(byStage).length) return '';
+  const maxStage = Math.max(...Object.keys(byStage).map(Number));
+  let html = '';
+  for (let s = 0; s <= maxStage; s++) {
+    if (!byStage[s]) continue;
+    const groups = byStage[s];
+    const total = Object.values(groups).reduce((n, g) => n + g.length, 0);
+    const label = s === 0 ? 'Base Materials' : `Production Stage ${s}`;
+    let inner = '';
+    for (const [tag, items] of Object.entries(groups).sort()) {
+      let rows = '';
+      for (const item of items) {
+        const need = needs[item.id] || 0;
+        const ok = item.qty >= need;
+        rows += `<div class="cp-row">
+          <span class="cp-name" title="${esc(item.name)}">${esc(item.name)}</span>
+          <span class="cp-right"><span class="cp-need ${ok?'ok':'short'}">${fmt(item.qty)}/${fmt(need)}</span></span>
         </div>`;
       }
-      pipe += `<div class="node${isCraftTarget?' node-target':''}">
-        <div class="node-name" title="${esc(st.name)}">${esc(st.tag || st.name)}</div>
-        <div class="node-qty">${fmt(st.qty)}</div>
+      inner += `<div class="cp-group">
+        <div class="cp-gtag">${esc(tag)}<span class="cp-gbadge">${items.length}</span></div>
+        ${rows}
       </div>`;
-    });
-    const rec = best ? `<div class="lane-rec">
-      <span>Craft <b>${esc(best.craft)}</b> — ${fmt(best.fromQty)} ${esc(best.from)} ready</span>
-      ${best.convertible != null ? `<span class="lane-rec-num">≈${fmt(best.convertible)}</span>` : ''}
-    </div>` : '';
-    return `<div class="lane">
-      <div class="lane-head"><span class="lane-label">${esc(chain.label)}</span></div>
-      <div class="pipe">${pipe}</div>
-      ${rec}
+    }
+    html += `<div class="cp-stage">
+      <div class="cp-shd"><span>${esc(label)}</span><span class="cp-sbadge">${total} total</span></div>
+      ${inner}
     </div>`;
-  }).join('') + '</div>';
+  }
+  return html;
 }
 
 function renderAllItems() {
@@ -383,7 +588,6 @@ function renderAllItems() {
   if (!rows.length) return ctrl + '<div class="hint">No items found.</div>';
   return ctrl +
   rows.map(r => `<div class="ai-row">
-    ${r.group && r.group !== '?' ? `<span class="ai-tag">${esc(r.group)}</span>` : ''}
     <span class="ai-name">${esc(r.name)}</span>
     <span class="ai-qty">${fmt(r.qty)}</span>
   </div>`).join('');
@@ -467,8 +671,65 @@ function bindTabEvents(id) {
         renderTab('storage');
       });
     });
+    if (storageMode === 'plan') bindGoalEvents();
     if (storageMode === 'items') bindAllItemsEvents();
   }
+}
+
+function bindGoalEvents() {
+  const searchInp = document.getElementById('plan-search');
+  if (searchInp) {
+    searchInp.addEventListener('mousedown', e => e.stopPropagation());
+    searchInp.addEventListener('input', e => {
+      window._planSearch = e.target.value;
+      _planSearchResults = null;
+      doPlanSearch(e.target.value);
+    });
+    if (window._planSearch) {
+      searchInp.focus();
+      const len = searchInp.value.length;
+      searchInp.setSelectionRange(len, len);
+    }
+  }
+  document.querySelectorAll('.plan-result').forEach(el => {
+    el.addEventListener('mousedown', e => e.preventDefault());
+    el.addEventListener('click', async () => {
+      const id = el.dataset.id;
+      if (!craftGoals[id]) craftGoals[id] = 1;
+      window._planSearch = '';
+      _planSearchResults = null;
+      localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
+      renderTab('storage');
+      await ensureChainCached(id);
+      renderTab('storage');
+    });
+  });
+  document.querySelectorAll('.plan-qty').forEach(inp => {
+    inp.addEventListener('mousedown', e => e.stopPropagation());
+    inp.addEventListener('change', e => {
+      const id = e.target.dataset.id;
+      const val = parseInt(e.target.value) || 1;
+      craftGoals[id] = Math.max(1, val);
+      localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
+      renderTab('storage');
+    });
+  });
+  document.querySelectorAll('.plan-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      delete craftGoals[btn.dataset.id];
+      localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
+      renderTab('storage');
+    });
+  });
+  const clearBtn = document.querySelector('.cp-clear-goals');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    craftGoals = {};
+    window._planSearch = '';
+    _planSearchResults = null;
+    localStorage.removeItem('bc-goals');
+    renderTab('storage');
+  });
+  resolveUnknownNames();
 }
 
 function bindAllItemsEvents() {
@@ -615,6 +876,7 @@ document.getElementById('collapse-btn').addEventListener('click', async () => {
 // Boot
 if (settlement) startMain();
 else showView('setup');
+checkForUpdate();
 </script>
 </body>
 </html>

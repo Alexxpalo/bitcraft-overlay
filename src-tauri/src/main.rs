@@ -67,8 +67,31 @@ fn set_window_size(window: tauri::Window, width: f64, height: f64) -> Result<(),
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    match app.updater().map_err(|e| e.to_string())?.check().await {
+        Ok(Some(u)) => Ok(Some(u.version.to_string())),
+        Ok(None)    => Ok(None),
+        Err(e)      => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    if let Some(u) = app.updater().map_err(|e| e.to_string())?
+        .check().await.map_err(|e| e.to_string())?
+    {
+        u.download_and_install(|_, _| {}, || {})
+            .await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {
@@ -81,6 +104,8 @@ fn main() {
             toggle_always_on_top,
             set_window_size,
             is_game_focused,
+            check_for_update,
+            install_update,
         ])
         .setup(|app| {
             // Dev-mode: watch src/ and reload all webview windows when files change
