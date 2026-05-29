@@ -1,6 +1,6 @@
 {
   "productName": "BitCraft Overlay",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "identifier": "com.bitcraft.overlay",
   "build": {
     "frontendDist": "../src"
