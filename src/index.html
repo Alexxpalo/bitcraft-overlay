@@ -418,11 +418,18 @@ async function resolveUnknownNames() {
     for (let i = 0; i < unknown.length; i += 3) {
       const batch = unknown.slice(i, i + 3);
       const results = await Promise.all(batch.map(async id => {
-        try { const j = await bitwasp(`items/${id}`); return { id, name: j.item?.name || j.name }; }
-        catch { return null; }
+        try {
+          const j = await bitwasp(`items/${id}`);
+          if (j.error) return { id, name: null };
+          return { id, name: j.item?.name || j.name || null };
+        }
+        catch { return { id, name: null }; }
       }));
       for (const r of results) {
-        if (r?.name && !fresh[r.id]) { fresh[r.id] = r.name; dirty = true; }
+        if (r && !fresh[r.id]) {
+          fresh[r.id] = r.name || `Item ${r.id.slice(-6)}`; // save placeholder to stop retrying
+          dirty = true;
+        }
       }
     }
     if (dirty) { localStorage.setItem('bc-items-map', JSON.stringify(fresh)); renderTab('storage'); }
