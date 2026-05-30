@@ -75,6 +75,21 @@
     .plan-remove { background: none; border: none; color: var(--dim2); cursor: pointer; font-size: 11px; padding: 0 2px; flex-shrink: 0; line-height: 1; }
     .plan-remove:hover { color: var(--bad); }
     .plan-divider { font-size: 10px; font-weight: 700; color: var(--dim2); text-transform: uppercase; letter-spacing: .08em; padding: 6px 1px 3px; }
+    .tk-setrow { display: flex; gap: 4px; padding: 7px 10px 6px; border-bottom: 1px solid var(--line); }
+    .tk-inp { font-size: 10px !important; padding: 3px 7px !important; }
+    .tk-setbtn { font-size: 10px; padding: 2px 8px; background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--dim2); cursor: pointer; font-family: var(--mono); flex-shrink: 0; }
+    .tk-setbtn:hover { border-color: var(--accent); color: var(--accent); }
+    .tk-head { font-size: 10px; color: var(--dim2); padding: 6px 10px 4px; font-family: var(--mono); }
+    .tk-head b { color: var(--good); }
+    .tk-npc { display: flex; align-items: center; justify-content: space-between; font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; padding: 7px 2px 3px; }
+    .tk-npc-count { font-size: 9px; font-weight: 600; color: var(--dim2); font-family: var(--mono); }
+    .tasks { display: flex; flex-direction: column; gap: 5px; padding: 0 8px 8px; }
+    .task-card { background: var(--bg2); border: 1px solid var(--line); border-left: 2px solid var(--craft); border-radius: 5px; padding: 6px 8px; }
+    .task-card.done { opacity: .5; border-left-color: var(--good); }
+    .task-desc { font-size: 11px; line-height: 1.3; margin-bottom: 4px; }
+    .task-meta { display: flex; flex-direction: column; gap: 2px; font-size: 9.5px; font-family: var(--mono); }
+    .task-need { color: var(--bad); }
+    .task-reward { color: var(--good); }
   </style>
 </head>
 <body>
@@ -119,6 +134,7 @@
         <button class="tab on" data-tab="storage">Storage</button>
         <button class="tab" data-tab="builds">Builds</button>
         <button class="tab" data-tab="jobs">Jobs</button>
+        <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="members">Members
           <span class="tab-badge" id="online-badge" style="display:none"></span>
         </button>
@@ -129,7 +145,7 @@
       <div class="footbar">
         <span class="region" id="footer-name"></span>
         <span class="grow"></span>
-        <span class="version-label">v0.2.3</span>
+        <span class="version-label">v0.2.4</span>
         <button class="change-btn" id="change-btn">change</button>
       </div>
     </div>
@@ -147,6 +163,8 @@ let chains = null;     // built chains for craft planner
 let buildsData = null;
 let jobsData = null;
 let membersData = null;
+let tasksData = null;  // null=idle, 'loading', 'noplayer', { tasks, items, cargo, skillMap, expiration }
+let _skillMap = null;
 let itemsMap = {};
 let craftGoals = JSON.parse(localStorage.getItem('bc-goals') || '{}');
 let _planSearchResults = null; // null=idle, 'loading', []=results
@@ -154,39 +172,87 @@ let _planSearchResults = null; // null=idle, 'loading', []=results
 const fmt = n => Number(n).toLocaleString('en-US');
 // esc() comes from common.js
 
-// ─── Chain meta cache (v4 includes perCraft) ─────────────────────────────
+// ─── Legacy chain cache (used by inventory view) ──────────────────────────
 const CHAIN_KEY = 'bc-chain-v4';
 function chainCache() { return JSON.parse(localStorage.getItem(CHAIN_KEY) || '{}'); }
 function saveChainCache(c) { localStorage.setItem(CHAIN_KEY, JSON.stringify(c)); }
 
+// ─── Full recipe cache (craft planner) ───────────────────────────────────
+// { [id]: { name, tag, outputQty, ingredients:[{id,qty}] } | null }
+const RECIPE_KEY = 'bc-recipe-v1';
+function recipeCache() { return JSON.parse(localStorage.getItem(RECIPE_KEY) || '{}'); }
+function saveRecipeEntry(id, val) {
+  const c = recipeCache(); c[id] = val;
+  localStorage.setItem(RECIPE_KEY, JSON.stringify(c));
+}
+
+function _saveName(id, name) {
+  if (!name) return;
+  const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+  if (!nm[id]) { nm[id] = name; localStorage.setItem('bc-items-map', JSON.stringify(nm)); }
+}
+
+async function fetchRecipe(id) {
+  const cache = recipeCache();
+  if (id in cache) return cache[id];
+
+  // Try items endpoint
+  try {
+    const j = await bitwasp(`items/${id}`);
+    if (!j.error) {
+      const name = j.item?.name || j.name || null;
+      const tag  = j.item?.tag  || '';
+      _saveName(id, name);
+      const recipes = j.craftingRecipes || [];
+      let result;
+      if (recipes.length > 0) {
+        const stacks = (recipes[0].consumedItemStacks || [])
+          .filter(s => (s.discovery_score ?? 1) > 0 && s.item_id);
+        if (stacks.length > 0) {
+          result = {
+            name, tag,
+            outputQty: recipes[0].producedQuantity || 1,
+            ingredients: stacks.map(s => ({ id: String(s.item_id), qty: s.quantity || 1 }))
+          };
+        }
+      }
+      if (!result) result = { name, tag, outputQty: 1, ingredients: [] };
+      saveRecipeEntry(id, result);
+      return result;
+    }
+  } catch(e) {}
+
+  // Try cargo endpoint as fallback
+  try {
+    const j = await bitwasp(`cargo/${id}`);
+    if (!j.error) {
+      const name = j.cargo?.name || j.name || null;
+      const tag  = j.cargo?.tag  || '';
+      _saveName(id, name);
+      const result = { name, tag, outputQty: 1, ingredients: [] };
+      saveRecipeEntry(id, result);
+      return result;
+    }
+  } catch(e) {}
+
+  // Unknown item — save placeholder so we stop retrying
+  const fallback = { name: null, tag: '', outputQty: 1, ingredients: [] };
+  saveRecipeEntry(id, fallback);
+  return fallback;
+}
+
 async function fetchChainMeta(id) {
   const cache = chainCache();
   if (cache[id] !== undefined) return cache[id];
-  try {
-    const j = await bitwasp(`items/${id}`);
-    const recipes = j.craftingRecipes || [];
-    let parentId = null, perCraft = null;
-    if (recipes.length > 0) {
-      const stacks = (recipes[0].consumedItemStacks || []).filter(s => (s.discovery_score ?? 1) > 0);
-      if (stacks.length > 0) {
-        parentId = String(stacks[0].item_id);
-        perCraft = stacks[0].quantity || 1;
-      }
-    }
-    const meta = { tag: j.item?.tag || '', parentId, perCraft };
-    const fresh = chainCache(); fresh[id] = meta; saveChainCache(fresh);
-    // Also save name to bc-items-map
-    const name = j.item?.name || j.name;
-    if (name) {
-      const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
-      if (!nm[id]) { nm[id] = name; localStorage.setItem('bc-items-map', JSON.stringify(nm)); }
-    }
-    return meta;
-  } catch {
-    const meta = { tag: '', parentId: null, perCraft: null };
-    const fresh = chainCache(); fresh[id] = meta; saveChainCache(fresh);
-    return meta;
-  }
+  // Use fetchRecipe and map to old format for inventory chain building
+  const r = await fetchRecipe(id);
+  const meta = {
+    tag: r?.tag || '',
+    parentId: r?.ingredients?.[0]?.id || null,
+    perCraft: r?.ingredients?.[0]?.qty || null
+  };
+  const fresh = chainCache(); fresh[id] = meta; saveChainCache(fresh);
+  return meta;
 }
 
 // Fetch meta for all ids without recursion — one API call per uncached item.
@@ -327,6 +393,58 @@ async function pollMembers() {
   if (activeTab === 'members') renderTab('members');
 }
 
+// ─── Traveler tasks ───────────────────────────────────────────────────────
+async function resolveTasksPlayerId() {
+  const name = localStorage.getItem('bc-tasks-player');
+  if (!name) return null;
+  const cached = localStorage.getItem('bc-tasks-player-id');
+  if (cached) return cached;
+  try {
+    const j = await bitwasp(`players?q=${encodeURIComponent(name)}`);
+    const p = (j.players || []).find(pl => (pl.username || '').toLowerCase() === name.toLowerCase());
+    if (!p) return null;
+    const id = String(p.entityId || '');
+    if (id) localStorage.setItem('bc-tasks-player-id', id);
+    return id || null;
+  } catch { return null; }
+}
+
+async function getSkillMap() {
+  if (_skillMap) return _skillMap;
+  try {
+    const j = await bitwasp('skills');
+    const m = {};
+    for (const cat of Object.values(j)) {
+      if (Array.isArray(cat)) for (const s of cat) m[s.id] = s.name;
+    }
+    _skillMap = m;
+  } catch { _skillMap = {}; }
+  return _skillMap;
+}
+
+async function pollTasks() {
+  if (!localStorage.getItem('bc-tasks-player')) { tasksData = null; if (activeTab === 'tasks') renderTab('tasks'); return; }
+  const id = await resolveTasksPlayerId();
+  if (!id) { tasksData = 'noplayer'; if (activeTab === 'tasks') renderTab('tasks'); return; }
+  try {
+    const [j, skillMap] = await Promise.all([ bitwasp(`players/${id}/traveler-tasks`), getSkillMap() ]);
+    tasksData = {
+      tasks: j.tasks || [],
+      items: j.items || {},
+      cargo: j.cargo || {},
+      skillMap,
+      expiration: j.expirationTimestamp || null,
+    };
+  } catch(e) { tasksData = { tasks: [], items: {}, cargo: {}, skillMap: {}, expiration: null }; console.error('tasks poll:', e); }
+  if (activeTab === 'tasks') renderTab('tasks');
+}
+
+function taskItemName(td, ref) {
+  const src = ref.item_type === 'cargo' ? td.cargo : td.items;
+  const meta = src[ref.item_id] || td.items[ref.item_id] || td.cargo[ref.item_id];
+  return meta ? meta.name : `#${ref.item_id}`;
+}
+
 function updateOnlineBadge() {
   const badge = document.getElementById('online-badge');
   if (!badge) return;
@@ -353,6 +471,7 @@ function renderTab(id) {
     storage: renderStorage,
     builds:  renderBuilds,
     jobs:    renderJobs,
+    tasks:   renderTasks,
     members: renderMembers,
   }[id]?.() || '';
   setTabContent(html);
@@ -370,8 +489,7 @@ function renderStorage() {
 }
 
 function renderCraftPlan() {
-  if (!chains || !allItems) return '<div class="hint">Loading inventory…</div>';
-  if (chains.length === 0) return '<div class="hint">No crafting chains found.</div>';
+  if (!allItems) return '<div class="hint">Loading inventory…</div>';
   return renderPlanEditor() + renderByStage();
 }
 
@@ -396,44 +514,17 @@ async function doPlanSearch(q) {
   if ((window._planSearch || '') === q) renderTab('storage');
 }
 
-async function ensureChainCached(id, depth = 0) {
-  if (depth > 10) return;
-  const m = await fetchChainMeta(id);
-  if (m?.parentId) await ensureChainCached(m.parentId, depth + 1);
-}
-
-let _resolvingNames = false;
-async function resolveUnknownNames() {
-  if (_resolvingNames) return;
-  const needs = computeNeeds();
-  if (!Object.keys(needs).length) return;
-  const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
-  const invIds = new Set((allItems || []).map(i => i.id));
-  const unknown = Object.keys(needs).filter(id => !nm[id] && !invIds.has(id));
-  if (!unknown.length) return;
-  _resolvingNames = true;
-  try {
-    const fresh = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
-    let dirty = false;
-    for (let i = 0; i < unknown.length; i += 3) {
-      const batch = unknown.slice(i, i + 3);
-      const results = await Promise.all(batch.map(async id => {
-        try {
-          const j = await bitwasp(`items/${id}`);
-          if (j.error) return { id, name: null };
-          return { id, name: j.item?.name || j.name || null };
-        }
-        catch { return { id, name: null }; }
-      }));
-      for (const r of results) {
-        if (r && !fresh[r.id]) {
-          fresh[r.id] = r.name || `Item ${r.id.slice(-6)}`; // save placeholder to stop retrying
-          dirty = true;
-        }
-      }
-    }
-    if (dirty) { localStorage.setItem('bc-items-map', JSON.stringify(fresh)); renderTab('storage'); }
-  } finally { _resolvingNames = false; }
+// Recursively fetch ALL ingredients in the recipe tree for a goal item.
+async function ensureGoalTree(id, depth = 0, visited = new Set()) {
+  if (depth > 15 || visited.has(id)) return;
+  visited.add(id);
+  const recipe = await fetchRecipe(id);
+  if (!recipe?.ingredients?.length) return;
+  // Fetch all ingredients in parallel (batched to respect rate limit)
+  for (let i = 0; i < recipe.ingredients.length; i += 5) {
+    const batch = recipe.ingredients.slice(i, i + 5);
+    await Promise.all(batch.map(ing => ensureGoalTree(ing.id, depth + 1, visited)));
+  }
 }
 
 function renderPlanEditor() {
@@ -479,75 +570,63 @@ function renderPlanEditor() {
 }
 
 function computeNeeds() {
-  if (!chains) return {};
+  if (!Object.keys(craftGoals).length) return {};
+  const cache = recipeCache();
+  const invById = Object.fromEntries((allItems || []).map(i => [i.id, i.qty]));
   const needs = {};
-  for (const [id, qty] of Object.entries(craftGoals)) {
-    if (qty > 0) needs[id] = qty;
-  }
-  // Cascade through inventory-based chains
-  for (const chain of chains) {
-    for (let i = chain.stages.length - 1; i >= 1; i--) {
-      const out = chain.stages[i];
-      const inp = chain.stages[i - 1];
-      const needed = needs[out.id] || 0;
-      if (!needed) continue;
-      const toMake = Math.max(0, needed - out.qty);
-      if (toMake > 0 && out.perCraft) {
-        needs[inp.id] = (needs[inp.id] || 0) + Math.ceil(toMake * out.perCraft);
-      }
-    }
-  }
-  // Cascade through bc-chain-v4 cache for items not in inventory chains
-  const meta = chainCache();
-  const invById = Object.fromEntries((allItems || []).map(i => [i.id, i]));
-  const chainIds = new Set();
-  for (const chain of chains) chain.stages.forEach(st => chainIds.add(st.id));
-  const visited = new Set();
-  function cascade(id) {
-    if (visited.has(id) || chainIds.has(id)) return;
+
+  function cascade(id, needed, visited = new Set()) {
+    if (visited.has(id)) return;
     visited.add(id);
-    const needed = needs[id] || 0;
-    if (!needed) return;
-    const m = meta[id];
-    if (!m?.parentId) return;
-    const haveQty = invById[id]?.qty || 0;
-    const toMake = Math.max(0, needed - haveQty);
-    if (toMake > 0 && m.perCraft) {
-      needs[m.parentId] = (needs[m.parentId] || 0) + Math.ceil(toMake * m.perCraft);
-      cascade(m.parentId);
+    needs[id] = (needs[id] || 0) + needed;
+    const recipe = cache[id];
+    if (!recipe?.ingredients?.length) return; // base material
+    const haveQty = invById[id] || 0;
+    const toCraft = Math.max(0, needed - haveQty);
+    if (toCraft <= 0) return;
+    const batches = Math.ceil(toCraft / (recipe.outputQty || 1));
+    for (const ing of recipe.ingredients) {
+      cascade(ing.id, ing.qty * batches, new Set(visited));
     }
   }
-  for (const id of Object.keys(craftGoals)) cascade(id);
+
+  for (const [id, qty] of Object.entries(craftGoals)) {
+    if (qty > 0) cascade(id, qty);
+  }
   return needs;
 }
 
 function renderByStage() {
   const needs = computeNeeds();
   if (!Object.keys(needs).length) return '';
-  const namesMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
-  const meta = chainCache();
+  const cache = recipeCache();
+  const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
   const invById = Object.fromEntries((allItems || []).map(i => [i.id, i]));
-  // stage depth: from chains first, then bc-chain-v4 parentId links
-  const stageOf = {};
-  for (const chain of chains) chain.stages.forEach((st, i) => { stageOf[st.id] = i; });
-  function depthOf(id, seen = new Set()) {
-    if (stageOf[id] !== undefined) return stageOf[id];
+
+  // Compute depth (0 = base material) from recipe tree
+  const depthMemo = {};
+  function depth(id, seen = new Set()) {
+    if (id in depthMemo) return depthMemo[id];
     if (seen.has(id)) return 0;
     seen.add(id);
-    const m = meta[id];
-    if (!m?.parentId) return 0;
-    return depthOf(m.parentId, seen) + 1;
+    const r = cache[id];
+    if (!r?.ingredients?.length) return (depthMemo[id] = 0);
+    const d = Math.max(...r.ingredients.map(ing => depth(ing.id, new Set(seen)))) + 1;
+    return (depthMemo[id] = d);
   }
+
   const byStage = {};
   for (const id of Object.keys(needs)) {
     const inv = invById[id];
-    const name = inv?.name || namesMap[id] || `#${id}`;
-    const qty = inv?.qty ?? 0;
-    const tag = inv?.tag || meta[id]?.tag || 'Other';
-    const s = depthOf(id);
+    const r = cache[id];
+    const name = inv?.name || nm[id] || r?.name || `Item ${id.slice(-6)}`;
+    const tag  = inv?.tag  || r?.tag  || 'Other';
+    const qty  = inv?.qty  ?? 0;
+    const s = depth(id);
     ((byStage[s] ??= {})[tag] ??= []).push({ id, name, qty });
   }
   if (!Object.keys(byStage).length) return '';
+
   const maxStage = Math.max(...Object.keys(byStage).map(Number));
   let html = '';
   for (let s = 0; s <= maxStage; s++) {
@@ -560,7 +639,7 @@ function renderByStage() {
       let rows = '';
       for (const item of items) {
         const need = needs[item.id] || 0;
-        const ok = item.qty >= need;
+        const ok   = item.qty >= need;
         rows += `<div class="cp-row">
           <span class="cp-name" title="${esc(item.name)}">${esc(item.name)}</span>
           <span class="cp-right"><span class="cp-need ${ok?'ok':'short'}">${fmt(item.qty)}/${fmt(need)}</span></span>
@@ -648,6 +727,52 @@ function renderJobs() {
   }).join('') + '</div>';
 }
 
+function renderTasks() {
+  const name = localStorage.getItem('bc-tasks-player') || '';
+  const setRow = `<div class="tk-setrow">
+    <input class="inp tk-inp" id="tk-inp" placeholder="Your player name…" value="${esc(name)}" autocomplete="off">
+    <button class="tk-setbtn" id="tk-setbtn">Set</button>
+  </div>`;
+  if (!name) return setRow + '<div class="hint">Set your player name to load traveler tasks.</div>';
+  if (tasksData === null) { tasksData = 'loading'; setTimeout(pollTasks, 0); return setRow + '<div class="hint">Loading…</div>'; }
+  if (tasksData === 'loading') return setRow + '<div class="hint">Loading…</div>';
+  if (tasksData === 'noplayer') return setRow + `<div class="hint">Player “${esc(name)}” not found.</div>`;
+  const td = tasksData;
+  if (!td.tasks.length) return setRow + '<div class="hint">No active traveler tasks.</div>';
+  const done = td.tasks.filter(t => t.completed).length;
+  let expStr = '';
+  if (td.expiration) {
+    const ms = td.expiration * 1000 - Date.now();
+    if (ms <= 0) expStr = 'expired';
+    else { const h = Math.floor(ms / 3600000), d = Math.floor(h / 24); expStr = d > 0 ? `${d}d ${h%24}h` : `${h}h`; }
+  }
+  const head = `<div class="tk-head"><b>${done}</b>/${td.tasks.length} done${expStr ? ` · resets in ${expStr}` : ''}</div>`;
+  const taskCard = t => {
+    const reqs = (t.requiredItems || []).map(r => `${esc(taskItemName(td, r))} ×${fmt(r.quantity)}`).join(', ');
+    const rewards = (t.rewardedItems || []).map(r => `${esc(taskItemName(td, r))} ×${fmt(r.quantity)}`).join(', ');
+    const xp = t.rewardedExperience ? `+${fmt(t.rewardedExperience.quantity)} ${esc(td.skillMap[t.rewardedExperience.skill_id] || 'XP')}` : '';
+    const lvl = t.levelRequirement;
+    const lvlStr = lvl && lvl.min_level > 1 ? ` · lvl ${lvl.min_level}+ ${esc(td.skillMap[lvl.skill_id] || '')}` : '';
+    return `<div class="task-card ${t.completed?'done':''}">
+      <div class="task-desc">${t.completed ? '✓ ' : ''}${esc(t.description)}</div>
+      <div class="task-meta">
+        <span class="task-need">Need: ${reqs}${lvlStr}</span>
+        <span class="task-reward">→ ${rewards}${xp ? ` · ${xp}` : ''}</span>
+      </div>
+    </div>`;
+  };
+  // Group by NPC — the traveler's name is the first word of the description
+  const npcOf = t => (t.description || '').split(' ')[0] || `Traveler ${t.travelerId}`;
+  const groups = {};
+  for (const t of td.tasks) (groups[npcOf(t)] = groups[npcOf(t)] || []).push(t);
+  const body = Object.keys(groups).sort((a, b) => a.localeCompare(b)).map(npc => {
+    const list = groups[npc].sort((a, b) => (a.completed?1:0) - (b.completed?1:0));
+    const ndone = list.filter(t => t.completed).length;
+    return `<div class="tk-npc">${esc(npc)}<span class="tk-npc-count">${ndone}/${list.length}</span></div>` + list.map(taskCard).join('');
+  }).join('');
+  return setRow + head + '<div class="tasks">' + body + '</div>';
+}
+
 function renderMembers() {
   if (!membersData) return '<div class="hint">Loading…</div>';
   if (!membersData.length) return '<div class="hint">No members found.</div>';
@@ -681,6 +806,27 @@ function bindTabEvents(id) {
     if (storageMode === 'plan') bindGoalEvents();
     if (storageMode === 'items') bindAllItemsEvents();
   }
+  if (id === 'tasks') {
+    const inp = document.getElementById('tk-inp');
+    const btn = document.getElementById('tk-setbtn');
+    if (inp) inp.addEventListener('mousedown', e => e.stopPropagation());
+    const apply = () => {
+      const v = inp.value.trim();
+      if (!v) {
+        localStorage.removeItem('bc-tasks-player');
+        localStorage.removeItem('bc-tasks-player-id');
+        tasksData = null;
+      } else {
+        localStorage.setItem('bc-tasks-player', v);
+        localStorage.removeItem('bc-tasks-player-id'); // force re-lookup
+        tasksData = 'loading';
+      }
+      renderTab('tasks');
+      pollTasks();
+    };
+    if (btn) btn.addEventListener('click', apply);
+    if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+  }
 }
 
 function bindGoalEvents() {
@@ -707,7 +853,8 @@ function bindGoalEvents() {
       _planSearchResults = null;
       localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
       renderTab('storage');
-      await ensureChainCached(id);
+      // Fetch full recipe tree for this item, then re-render
+      await ensureGoalTree(id);
       renderTab('storage');
     });
   });
@@ -736,7 +883,11 @@ function bindGoalEvents() {
     localStorage.removeItem('bc-goals');
     renderTab('storage');
   });
-  resolveUnknownNames();
+  // Re-fetch recipe trees for any goals not yet fully cached
+  const missingGoals = Object.keys(craftGoals).filter(id => !(id in recipeCache()));
+  if (missingGoals.length) {
+    Promise.all(missingGoals.map(id => ensureGoalTree(id))).then(() => renderTab('storage'));
+  }
 }
 
 function bindAllItemsEvents() {
@@ -768,6 +919,7 @@ function startMain() {
     if (activeTab === 'storage') pollStorage();
     else if (activeTab === 'builds') pollBuilds();
     else if (activeTab === 'jobs') pollJobs();
+    else if (activeTab === 'tasks') pollTasks();
     else if (activeTab === 'members') pollMembers();
   });
 }
