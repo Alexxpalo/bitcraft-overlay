@@ -151,14 +151,14 @@
 <script>
 // ─── State ────────────────────────────────────────────────────────────────
 let settlement = getSettlement();
-let activeTab = 'storage';
+let activeTab = localStorage.getItem('bc-active-tab') || 'storage';
 let storageMode = 'plan'; // 'plan' | 'items'
-let allItems = null;   // flat item rows for all-items view
-let chains = null;     // built chains for craft planner
+let allItems = null;
 let buildsData = null;
 let jobsData = null;
 let membersData = null;
 let tasksData = null;  // null=idle, 'loading', 'noplayer', { tasks, items, cargo, skillMap, expiration }
+let claimData = null;
 let _skillMap = null;
 let itemsMap = {};
 let craftGoals = JSON.parse(localStorage.getItem('bc-goals') || '{}');
@@ -169,10 +169,20 @@ const ACTIVE_STALE_MS = 5000;
 const BG_STALE_MS = 30000;
 function _poll(tab) {
   _lastPoll[tab] = Date.now();
-  ({ storage: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks })[tab]?.();
+  ({ storage: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks, claim: pollClaim })[tab]?.();
 }
 function _pollIfStale(tab, staleMs) {
   if (Date.now() - (_lastPoll[tab] || 0) > staleMs) _poll(tab);
+}
+
+const TAB_ORDER = ['storage', 'builds', 'jobs', 'tasks', 'members', 'settings'];
+function switchTab(id) {
+  if (!TAB_ORDER.includes(id) || id === activeTab) return;
+  activeTab = id;
+  localStorage.setItem('bc-active-tab', id);
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
+  renderTab(id);
+  _pollIfStale(id, ACTIVE_STALE_MS);
 }
 
 const fmt = n => Number(n).toLocaleString('en-US');
@@ -201,12 +211,6 @@ function iconImg(asset, cls = 'item-icon') {
   return `<img class="${cls}" src="${esc(ICON_BASE + a + '.webp')}" alt="" loading="lazy" onerror="this.classList.add('blank')">`;
 }
 
-// ─── Legacy chain cache (used by inventory view) ──────────────────────────
-const CHAIN_KEY = 'bc-chain-v4';
-let _chainCache = null;
-function chainCache() { return _chainCache ?? (_chainCache = JSON.parse(localStorage.getItem(CHAIN_KEY) || '{}')); }
-function saveChainCache(c) { _chainCache = c; localStorage.setItem(CHAIN_KEY, JSON.stringify(c)); }
-
 // ─── Full recipe cache (craft planner) ───────────────────────────────────
 // { [id]: { name, tag, outputQty, ingredients:[{id,qty}] } | null }
 const RECIPE_KEY = 'bc-recipe-v2'; // v2: recipes now also populate bc-icons-map
@@ -223,10 +227,12 @@ function _saveName(id, name) {
   localStorage.setItem('bc-items-map', JSON.stringify(itemsMap));
 }
 
+const _recipeInFlight = new Map();
 async function fetchRecipe(id) {
   const cache = recipeCache();
   if (id in cache) return cache[id];
-
+  if (_recipeInFlight.has(id)) return _recipeInFlight.get(id);
+  const p = (async () => {
   // Try items endpoint
   try {
     const j = await bitwasp(`items/${id}`);
@@ -272,91 +278,9 @@ async function fetchRecipe(id) {
   const fallback = { name: null, tag: '', outputQty: 1, ingredients: [] };
   saveRecipeEntry(id, fallback);
   return fallback;
-}
-
-async function fetchChainMeta(id) {
-  const cache = chainCache();
-  if (cache[id] !== undefined) return cache[id];
-  // Use fetchRecipe and map to old format for inventory chain building
-  const r = await fetchRecipe(id);
-  const meta = {
-    tag: r?.tag || '',
-    parentId: r?.ingredients?.[0]?.id || null,
-    perCraft: r?.ingredients?.[0]?.qty || null
-  };
-  const fresh = chainCache(); fresh[id] = meta; saveChainCache(fresh);
-  return meta;
-}
-
-// Fetch meta for all ids without recursion — one API call per uncached item.
-async function batchFetchMeta(ids) {
-  const BATCH = 6;
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const slice = ids.slice(i, i + BATCH);
-    const cache = chainCache();
-    const uncached = slice.filter(id => cache[id] === undefined);
-    if (uncached.length) await Promise.all(uncached.map(id => fetchChainMeta(id)));
-  }
-}
-
-// Build chains using parentId links — groups items that share a refining chain.
-// root = raw material (no recipe parent in inventory); chain goes root → … → most-refined.
-function buildChainsFromMeta(items) {
-  const meta = chainCache();
-  const itemIds = new Set(items.map(i => i.id));
-
-  // Map each item to its parent if that parent is also in inventory.
-  const parent = {};
-  for (const item of items) {
-    const m = meta[item.id];
-    if (m?.parentId && itemIds.has(m.parentId)) {
-      parent[item.id] = m.parentId;
-      item.perCraft = m.perCraft;
-    }
-  }
-
-  // Roots are items that have children but no in-inventory parent.
-  const hasChildren = new Set(Object.values(parent));
-  const roots = items.filter(i => !parent[i.id] && hasChildren.has(i.id));
-
-  return roots.map(root => {
-    const chain = [root];
-    let cur = root;
-    for (;;) {
-      const child = items.find(i => parent[i.id] === cur.id);
-      if (!child) break;
-      chain.push(child);
-      cur = child;
-    }
-    const label = itemsMap[root.id] || root.name;
-    return { label, stages: chain };
-  }).sort((a, b) => a.label.localeCompare(b.label));
-}
-
-// ─── Craft planner engine ─────────────────────────────────────────────────
-function computePlan(chains) {
-  const recs = [];
-  for (const chain of chains) {
-    for (let i = 0; i < chain.stages.length - 1; i++) {
-      const inp = chain.stages[i];
-      const out = chain.stages[i + 1];
-      const perCraft = out.perCraft;
-      let convertible, blocked;
-      if (perCraft) {
-        convertible = Math.floor(inp.qty / perCraft);
-        blocked = convertible < 1;
-      } else {
-        convertible = null;
-        blocked = inp.qty < 5;
-      }
-      if (blocked) { recs.push({ chainLabel: chain.label, from: inp.name, fromQty: inp.qty, craft: out.name, toQty: out.qty, convertible: 0, blocked: true, score: 0, stageIndex: i }); continue; }
-      const effective = convertible ?? inp.qty;
-      const scarcity = effective / (out.qty + effective);
-      const score = scarcity * Math.log10(effective + 1);
-      recs.push({ chainLabel: chain.label, from: inp.name, fromQty: inp.qty, craft: out.name, toQty: out.qty, convertible, blocked: false, score, stageIndex: i });
-    }
-  }
-  return recs.sort((a, b) => b.score - a.score);
+  })();
+  _recipeInFlight.set(id, p);
+  try { return await p; } finally { _recipeInFlight.delete(id); }
 }
 
 // ─── Poll functions ───────────────────────────────────────────────────────
@@ -382,13 +306,10 @@ async function pollStorage() {
     for (const [id, m] of Object.entries(im)) itemsMap[id] = m.name;
     localStorage.setItem('bc-items-map', JSON.stringify(itemsMap));
 
-    await batchFetchMeta(ids);
-
     allItems = ids.map(id => {
       const m = im[id] || { name: `#${id}`, tag: '', icon: '' };
       return { id, name: m.name, qty: totals[id], tag: m.tag, icon: m.icon };
     });
-    chains = buildChainsFromMeta(allItems);
   } catch(e) { console.error('storage poll:', e); }
   if (activeTab === 'storage') renderTab('storage');
 }
@@ -481,6 +402,39 @@ function taskItemName(td, ref) {
   return meta ? meta.name : `#${ref.item_id}`;
 }
 
+async function pollClaim() {
+  if (!settlement) return;
+  try {
+    const j = await bitwasp(`claims/${settlement.id}`);
+    claimData = j.claim || null;
+  } catch(e) { console.error('claim poll:', e); }
+  updateSupplies();
+}
+
+function updateSupplies() {
+  const el = document.getElementById('settlement-tier');
+  if (!el) return;
+  if (!claimData) { el.style.display = 'none'; return; }
+  const supplies = Number(claimData.supplies) || 0;
+  const tier = claimData.tier || '';
+  const runOut = claimData.suppliesRunOut; // epoch-ms
+  let timeStr = '';
+  let low = false;
+  if (runOut) {
+    const ms = runOut - Date.now();
+    if (ms <= 0) { timeStr = 'empty'; low = true; }
+    else {
+      low = ms < 86400000; // < 24 h
+      const h = Math.floor(ms / 3600000);
+      const d = Math.floor(h / 24);
+      timeStr = d > 0 ? `${d}d ${h % 24}h` : `${h}h`;
+    }
+  }
+  el.className = 'settle-tier' + (low ? ' low' : '');
+  el.style.display = '';
+  el.textContent = `T${tier} · ◆ ${fmt(supplies)}${timeStr ? ' · ' + timeStr : ''}`;
+}
+
 function updateOnlineBadge() {
   const badge = document.getElementById('online-badge');
   if (!badge) return;
@@ -490,7 +444,7 @@ function updateOnlineBadge() {
 }
 
 function pollAll() {
-  for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks']) _poll(tab);
+  for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'claim']) _poll(tab);
 }
 
 // ─── Tab rendering ────────────────────────────────────────────────────────
@@ -562,11 +516,7 @@ async function ensureGoalTree(id, depth = 0, visited = new Set()) {
   visited.add(id);
   const recipe = await fetchRecipe(id);
   if (!recipe?.ingredients?.length) return;
-  // Fetch all ingredients in parallel (batched to respect rate limit)
-  for (let i = 0; i < recipe.ingredients.length; i += 5) {
-    const batch = recipe.ingredients.slice(i, i + 5);
-    await Promise.all(batch.map(ing => ensureGoalTree(ing.id, depth + 1, visited)));
-  }
+  await Promise.all(recipe.ingredients.map(ing => ensureGoalTree(ing.id, depth + 1, visited)));
 }
 
 // Fetch every goal's full recipe tree, showing a loading state until done so the
@@ -579,7 +529,7 @@ async function loadGoalTrees() {
   _planLoadInFlight = true;
   window._planLoading = true;
   if (activeTab === 'storage') renderTab('storage');
-  try { await Promise.all(goals.map(id => ensureGoalTree(id))); }
+  try { const visited = new Set(); await Promise.all(goals.map(id => ensureGoalTree(id, 0, visited))); }
   finally {
     _planLoadInFlight = false;
     window._planLoading = false;
@@ -879,7 +829,7 @@ function renderSettings() {
         <button class="change-btn" id="cfg-change-sett">Change</button>
       </div>
     </div>
-    <div class="settings-version">v0.2.6</div>
+    <div class="settings-version">${window._appVersion ? 'v' + esc(window._appVersion) : ''}</div>
   </div>`;
 }
 
@@ -938,7 +888,8 @@ function bindTabEvents(id) {
     const changeBtn = document.getElementById('cfg-change-sett');
     if (changeBtn) changeBtn.addEventListener('click', () => {
       setSettlement(null); settlement = null;
-      allItems = null; chains = null; buildsData = null; jobsData = null; membersData = null;
+      allItems = null; buildsData = null; jobsData = null; membersData = null; claimData = null;
+      updateSupplies();
       document.getElementById('search-input').value = '';
       document.getElementById('search-results').innerHTML = '';
       showView('setup');
@@ -1026,19 +977,20 @@ function showView(id) {
 
 function startMain() {
   document.getElementById('settlement-label').textContent = settlement.name;
-  document.getElementById('settlement-tier').style.display = 'none';
+  updateSupplies();
   showView('main');
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === activeTab));
   // If any goal's recipe tree isn't cached yet, start in the loading state so the
   // craft plan doesn't flash a half-resolved tree before loadGoalTrees() kicks in.
   window._planLoading = Object.keys(craftGoals).some(id => !(id in recipeCache()));
   renderTab(activeTab);
   pollAll();
-  startPollClock(5000);
   setInterval(() => {
     _pollIfStale(activeTab, ACTIVE_STALE_MS);
     for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks']) {
       if (tab !== activeTab) _pollIfStale(tab, BG_STALE_MS);
     }
+    _pollIfStale('claim', BG_STALE_MS);
   }, 5000);
 }
 
@@ -1069,13 +1021,25 @@ async function search() {
 // Tab switching
 document.getElementById('tabs').addEventListener('click', e => {
   const btn = e.target.closest('.tab');
-  if (!btn) return;
-  const id = btn.dataset.tab;
-  if (id === activeTab) return;
-  activeTab = id;
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
-  renderTab(id);
-  _pollIfStale(id, ACTIVE_STALE_MS);
+  if (btn) switchTab(btn.dataset.tab);
+});
+
+document.addEventListener('keydown', e => {
+  if (!e.ctrlKey) return;
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const cur = TAB_ORDER.indexOf(activeTab);
+    const next = e.shiftKey
+      ? (cur - 1 + TAB_ORDER.length) % TAB_ORDER.length
+      : (cur + 1) % TAB_ORDER.length;
+    switchTab(TAB_ORDER[next]);
+    return;
+  }
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= TAB_ORDER.length) {
+    e.preventDefault();
+    switchTab(TAB_ORDER[n - 1]);
+  }
 });
 
 // Window chrome — T is declared in common.js
@@ -1145,6 +1109,10 @@ document.getElementById('collapse-btn').addEventListener('click', async () => {
 if (settlement) startMain();
 else showView('setup');
 checkForUpdate();
+T?.core?.invoke('app_version').then(v => {
+  window._appVersion = v;
+  if (activeTab === 'settings') renderTab('settings');
+}).catch(() => {});
 </script>
 </body>
 </html>

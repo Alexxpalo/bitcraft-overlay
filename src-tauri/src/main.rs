@@ -31,33 +31,50 @@ async fn bitwasp(path: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn toggle_always_on_top(window: tauri::Window) -> Result<bool, String> {
-    let current = window.is_always_on_top().map_err(|e| e.to_string())?;
-    let next = !current;
-    window.set_always_on_top(next).map_err(|e| e.to_string())?;
-    Ok(next)
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
 }
 
 #[tauri::command]
 fn is_game_focused() -> bool {
     #[cfg(windows)]
     unsafe {
-        use winapi::um::processthreadsapi::GetCurrentProcessId;
-        use winapi::um::winuser::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId};
+        use winapi::um::handleapi::CloseHandle;
+        use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess};
+        use winapi::um::winbase::QueryFullProcessImageNameW;
+        use winapi::um::winnt::PROCESS_QUERY_LIMITED_INFORMATION;
+        use winapi::um::winuser::{GetForegroundWindow, GetWindowThreadProcessId};
+
         let hwnd = GetForegroundWindow();
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
+        // Own window focused (e.g. user clicking the overlay) → keep visible.
         if pid == GetCurrentProcessId() {
             return true;
         }
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
         let mut buf = [0u16; 512];
-        let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
-        if len <= 0 { return false; }
-        let title = String::from_utf16_lossy(&buf[..len as usize]);
-        title.to_ascii_lowercase().contains("bitcraft")
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len);
+        CloseHandle(handle);
+        if ok == 0 {
+            return false;
+        }
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        let exe = path
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        exe.contains("bitcraft")
     }
     #[cfg(not(windows))]
-    { true }
+    {
+        true
+    }
 }
 
 #[tauri::command]
@@ -101,7 +118,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             bitwasp,
-            toggle_always_on_top,
+            app_version,
             set_window_size,
             is_game_focused,
             check_for_update,
@@ -144,5 +161,5 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error while running tauri application")
 }

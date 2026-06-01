@@ -49,6 +49,11 @@ body {
   background: color-mix(in oklab, var(--craft) 12%, transparent);
   padding: 1px 4px; border-radius: 4px;
 }
+.settle-tier.low {
+  color: var(--bad);
+  border-color: color-mix(in oklab, var(--bad) 40%, transparent);
+  background: color-mix(in oklab, var(--bad) 12%, transparent);
+}
 .grow { flex: 1; }
 .winbtn {
   width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;

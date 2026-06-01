@@ -72,17 +72,17 @@ jobs:
           # Tauri 2.0 (createUpdaterArtifacts) signs the installers directly:
           # Linux -> *.AppImage(.sig), Windows NSIS -> *-setup.exe(.sig)
           gh release download "$TAG" --repo "$REPO" \
-            --pattern "*.AppImage.sig" \
-            --pattern "*-setup.exe.sig" \
+            --pattern "*.AppImage.tar.gz.sig" \
+            --pattern "*-setup.nsis.zip.sig" \
             --dir /tmp/sigs 2>/dev/null || true
 
-          LINUX_SIG_FILE=$(ls /tmp/sigs/*.AppImage.sig 2>/dev/null | head -1)
-          WIN_SIG_FILE=$(ls /tmp/sigs/*-setup.exe.sig 2>/dev/null | head -1)
+          LINUX_SIG_FILE=$(ls /tmp/sigs/*.AppImage.tar.gz.sig 2>/dev/null | head -1)
+          WIN_SIG_FILE=$(ls /tmp/sigs/*-setup.nsis.zip.sig 2>/dev/null | head -1)
 
           LINUX_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
-            -q '.assets[] | select(.name | endswith(".AppImage")) | .url' | head -1)
+            -q '.assets[] | select(.name | endswith(".AppImage.tar.gz")) | .url' | head -1)
           WIN_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
-            -q '.assets[] | select(.name | endswith("-setup.exe")) | .url' | head -1)
+            -q '.assets[] | select(.name | endswith("-setup.nsis.zip")) | .url' | head -1)
 
           echo "Linux  sig: $LINUX_SIG_FILE  url: $LINUX_URL"
           echo "Windows sig: $WIN_SIG_FILE  url: $WIN_URL"
