@@ -17,11 +17,14 @@ async function poll() {
   try {
     const j = await bitwasp(`claims/${settlement.id}/citizens`);
     const citizens = j.citizens || [];
-    const results = await Promise.all(citizens.map(async c => {
+    membersData = citizens.map(c => ({ userName: c.userName, signedIn: false, lastLogin: null }));
+    render();
+    await Promise.all(citizens.map(async c => {
       const status = await fetchStatus(c.userName);
-      return { userName: c.userName, signedIn: status?.signedIn ?? false, lastLogin: status?.lastLogin ?? null };
+      const item = membersData.find(m => m.userName === c.userName);
+      if (item) { item.signedIn = status?.signedIn ?? false; item.lastLogin = status?.lastLogin ?? null; }
+      render();
     }));
-    membersData = results;
     setStatus('● live', 'ok');
   } catch(e) {
     setStatus('error: ' + e, 'err');

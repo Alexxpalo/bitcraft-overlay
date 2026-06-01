@@ -138,16 +138,11 @@
         <button class="tab" data-tab="members">Members
           <span class="tab-badge" id="online-badge" style="display:none"></span>
         </button>
+        <button class="tab" data-tab="settings">Settings</button>
       </div>
 
       <div class="content" id="tab-content"></div>
 
-      <div class="footbar">
-        <span class="region" id="footer-name"></span>
-        <span class="grow"></span>
-        <span class="version-label">v0.2.4</span>
-        <button class="change-btn" id="change-btn">change</button>
-      </div>
     </div>
   </div>
 </div>
@@ -172,6 +167,28 @@ let _planSearchResults = null; // null=idle, 'loading', []=results
 const fmt = n => Number(n).toLocaleString('en-US');
 // esc() comes from common.js
 
+// ─── Item icons ───────────────────────────────────────────────────────────
+// iconAssetName comes in two shapes depending on endpoint:
+//   inventories → "GeneratedIcons/Items/Bait"   (with prefix)
+//   item search → "Items/FishFilet"             (without prefix)
+// Normalize to a bare "Items/Bait" path, then serve the webp from:
+const ICON_BASE = 'https://bitjita.com/GeneratedIcons/';
+function normIcon(asset) {
+  return String(asset || '').replace(/^\/+/, '').replace(/^GeneratedIcons\//, '');
+}
+function iconMap() { return JSON.parse(localStorage.getItem('bc-icons-map') || '{}'); }
+function saveIcon(id, asset) {
+  if (!id || !asset) return;
+  const a = normIcon(asset);
+  const m = iconMap();
+  if (m[id] !== a) { m[id] = a; localStorage.setItem('bc-icons-map', JSON.stringify(m)); }
+}
+function iconImg(asset, cls = 'item-icon') {
+  const a = normIcon(asset);
+  if (!a) return `<span class="${cls} blank"></span>`;
+  return `<img class="${cls}" src="${esc(ICON_BASE + a + '.webp')}" alt="" loading="lazy" onerror="this.classList.add('blank')">`;
+}
+
 // ─── Legacy chain cache (used by inventory view) ──────────────────────────
 const CHAIN_KEY = 'bc-chain-v4';
 function chainCache() { return JSON.parse(localStorage.getItem(CHAIN_KEY) || '{}'); }
@@ -179,7 +196,7 @@ function saveChainCache(c) { localStorage.setItem(CHAIN_KEY, JSON.stringify(c));
 
 // ─── Full recipe cache (craft planner) ───────────────────────────────────
 // { [id]: { name, tag, outputQty, ingredients:[{id,qty}] } | null }
-const RECIPE_KEY = 'bc-recipe-v1';
+const RECIPE_KEY = 'bc-recipe-v2'; // v2: recipes now also populate bc-icons-map
 function recipeCache() { return JSON.parse(localStorage.getItem(RECIPE_KEY) || '{}'); }
 function saveRecipeEntry(id, val) {
   const c = recipeCache(); c[id] = val;
@@ -203,6 +220,7 @@ async function fetchRecipe(id) {
       const name = j.item?.name || j.name || null;
       const tag  = j.item?.tag  || '';
       _saveName(id, name);
+      saveIcon(id, j.item?.iconAssetName);
       const recipes = j.craftingRecipes || [];
       let result;
       if (recipes.length > 0) {
@@ -229,6 +247,7 @@ async function fetchRecipe(id) {
       const name = j.cargo?.name || j.name || null;
       const tag  = j.cargo?.tag  || '';
       _saveName(id, name);
+      saveIcon(id, j.cargo?.iconAssetName);
       const result = { name, tag, outputQty: 1, ingredients: [] };
       saveRecipeEntry(id, result);
       return result;
@@ -333,7 +352,10 @@ async function pollStorage() {
   try {
     const j = await bitwasp(`claims/${settlement.id}/inventories`);
     const im = {};
-    for (const it of [...(j.items || []), ...(j.cargos || [])]) im[it.id] = { name: it.name, tag: it.tag || '' };
+    for (const it of [...(j.items || []), ...(j.cargos || [])]) {
+      im[it.id] = { name: it.name, tag: it.tag || '', icon: it.iconAssetName || '' };
+      saveIcon(it.id, it.iconAssetName);
+    }
     const totals = {};
     for (const b of (j.buildings || [])) {
       for (const slot of (b.inventory || [])) {
@@ -349,8 +371,8 @@ async function pollStorage() {
     await batchFetchMeta(ids);
 
     allItems = ids.map(id => {
-      const m = im[id] || { name: `#${id}`, tag: '' };
-      return { id, name: m.name, qty: totals[id], tag: m.tag };
+      const m = im[id] || { name: `#${id}`, tag: '', icon: '' };
+      return { id, name: m.name, qty: totals[id], tag: m.tag, icon: m.icon };
     });
     chains = buildChainsFromMeta(allItems);
   } catch(e) { console.error('storage poll:', e); }
@@ -468,11 +490,12 @@ function setTabContent(html) {
 
 function renderTab(id) {
   const html = {
-    storage: renderStorage,
-    builds:  renderBuilds,
-    jobs:    renderJobs,
-    tasks:   renderTasks,
-    members: renderMembers,
+    storage:  renderStorage,
+    builds:   renderBuilds,
+    jobs:     renderJobs,
+    tasks:    renderTasks,
+    members:  renderMembers,
+    settings: renderSettings,
   }[id]?.() || '';
   setTabContent(html);
   bindTabEvents(id);
@@ -490,7 +513,10 @@ function renderStorage() {
 
 function renderCraftPlan() {
   if (!allItems) return '<div class="hint">Loading inventory…</div>';
-  return renderPlanEditor() + renderByStage();
+  // Keep the plan editor (search + goals) live, but hold the requirements
+  // breakdown until the whole recipe tree has loaded.
+  const body = window._planLoading ? '<div class="hint">Loading requirements…</div>' : renderByStage();
+  return renderPlanEditor() + body;
 }
 
 async function doPlanSearch(q) {
@@ -501,11 +527,16 @@ async function doPlanSearch(q) {
     if ((window._planSearch || '') !== q) return; // stale, discard
     const arr = j.items || j.results || (Array.isArray(j) ? j : []);
     const invById = Object.fromEntries((allItems || []).map(i => [String(i.id), i.qty]));
-    _planSearchResults = arr.slice(0, 10).map(it => ({
-      id: String(it.id ?? it.entityId ?? it.item_id),
-      name: it.name || it.displayName || `#${it.id}`,
-      qty: invById[String(it.id ?? it.entityId ?? it.item_id)] ?? 0,
-    }));
+    _planSearchResults = arr.slice(0, 10).map(it => {
+      const rid = String(it.id ?? it.entityId ?? it.item_id);
+      saveIcon(rid, it.iconAssetName);
+      return {
+        id: rid,
+        name: it.name || it.displayName || `#${it.id}`,
+        qty: invById[rid] ?? 0,
+        icon: it.iconAssetName || '',
+      };
+    });
     const map = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
     let dirty = false;
     for (const r of _planSearchResults) { if (!map[r.id]) { map[r.id] = r.name; dirty = true; } }
@@ -527,6 +558,24 @@ async function ensureGoalTree(id, depth = 0, visited = new Set()) {
   }
 }
 
+// Fetch every goal's full recipe tree, showing a loading state until done so the
+// craft plan never renders a half-resolved tree (placeholder names, missing icons).
+let _planLoadInFlight = false;
+async function loadGoalTrees() {
+  if (_planLoadInFlight) return;
+  const goals = Object.keys(craftGoals);
+  if (!goals.length) { window._planLoading = false; return; }
+  _planLoadInFlight = true;
+  window._planLoading = true;
+  if (activeTab === 'storage') renderTab('storage');
+  try { await Promise.all(goals.map(id => ensureGoalTree(id))); }
+  finally {
+    _planLoadInFlight = false;
+    window._planLoading = false;
+    if (activeTab === 'storage') renderTab('storage');
+  }
+}
+
 function renderPlanEditor() {
   const q = window._planSearch || '';
   const invById = Object.fromEntries((allItems || []).map(i => [i.id, i.qty]));
@@ -535,6 +584,7 @@ function renderPlanEditor() {
     if (Array.isArray(_planSearchResults) && _planSearchResults.length) {
       resultsHtml = `<div class="plan-results">${_planSearchResults.map(i =>
         `<div class="plan-result" data-id="${esc(i.id)}">
+          ${iconImg(i.icon, 'item-icon cp-icon')}
           <span>${esc(i.name)}</span>
           <span class="plan-result-have">${fmt(i.qty)} in stock</span>
         </div>`).join('')}</div>`;
@@ -543,10 +593,11 @@ function renderPlanEditor() {
     }
   }
   const namesMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+  const icons = iconMap();
   const planItems = Object.entries(craftGoals).map(([id, qty]) => {
     const inv = (allItems || []).find(i => i.id === id);
     const name = inv?.name || namesMap[id];
-    return name ? { id, name, qty } : null;
+    return name ? { id, name, qty, icon: icons[id] || inv?.icon || '' } : null;
   }).filter(Boolean);
   let planHtml = '';
   if (planItems.length) {
@@ -556,6 +607,7 @@ function renderPlanEditor() {
         <button class="cp-clear-goals">Clear all</button>
       </div>
       ${planItems.map(item => `<div class="plan-item">
+        ${iconImg(item.icon, 'item-icon cp-icon')}
         <span class="plan-item-name" title="${esc(item.name)}">${esc(item.name)}</span>
         <input class="cp-goal-inp plan-qty" data-id="${esc(item.id)}" type="number" min="1" value="${item.qty}">
         <button class="plan-remove" data-id="${esc(item.id)}">✕</button>
@@ -601,6 +653,7 @@ function renderByStage() {
   if (!Object.keys(needs).length) return '';
   const cache = recipeCache();
   const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
+  const icons = iconMap();
   const invById = Object.fromEntries((allItems || []).map(i => [i.id, i]));
 
   // Compute depth (0 = base material) from recipe tree
@@ -641,6 +694,7 @@ function renderByStage() {
         const need = needs[item.id] || 0;
         const ok   = item.qty >= need;
         rows += `<div class="cp-row">
+          ${iconImg(icons[item.id] || invById[item.id]?.icon, 'item-icon cp-icon')}
           <span class="cp-name" title="${esc(item.name)}">${esc(item.name)}</span>
           <span class="cp-right"><span class="cp-need ${ok?'ok':'short'}">${fmt(item.qty)}/${fmt(need)}</span></span>
         </div>`;
@@ -674,6 +728,7 @@ function renderAllItems() {
   if (!rows.length) return ctrl + '<div class="hint">No items found.</div>';
   return ctrl +
   rows.map(r => `<div class="ai-row">
+    ${iconImg(r.icon)}
     <span class="ai-name">${esc(r.name)}</span>
     <span class="ai-qty">${fmt(r.qty)}</span>
   </div>`).join('');
@@ -794,6 +849,29 @@ function renderMembers() {
   </div>`;
 }
 
+function renderSettings() {
+  const playerName = localStorage.getItem('bc-tasks-player') || '';
+  const sett = getSettlement();
+  return `<div class="settings-page">
+    <div class="settings-section">
+      <div class="settings-label">Player name</div>
+      <div class="settings-row">
+        <input class="inp settings-inp" id="cfg-player" placeholder="Your in-game name…" value="${esc(playerName)}" autocomplete="off">
+        <button class="settings-save" id="cfg-player-save">Save</button>
+      </div>
+      <div class="settings-hint">Used for Traveler Tasks lookup.</div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">Settlement</div>
+      <div class="settings-row">
+        <span class="settings-value">${sett ? esc(sett.name) : '—'}</span>
+        <button class="change-btn" id="cfg-change-sett">Change</button>
+      </div>
+    </div>
+    <div class="settings-version">v0.2.5</div>
+  </div>`;
+}
+
 // ─── Event binding ────────────────────────────────────────────────────────
 function bindTabEvents(id) {
   if (id === 'storage') {
@@ -827,6 +905,34 @@ function bindTabEvents(id) {
     if (btn) btn.addEventListener('click', apply);
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
   }
+  if (id === 'settings') {
+    const inp = document.getElementById('cfg-player');
+    const saveBtn = document.getElementById('cfg-player-save');
+    if (inp) inp.addEventListener('mousedown', e => e.stopPropagation());
+    const apply = () => {
+      const v = inp.value.trim();
+      if (!v) {
+        localStorage.removeItem('bc-tasks-player');
+        localStorage.removeItem('bc-tasks-player-id');
+      } else {
+        localStorage.setItem('bc-tasks-player', v);
+        localStorage.removeItem('bc-tasks-player-id');
+      }
+      tasksData = null;
+      saveBtn.textContent = 'Saved!';
+      setTimeout(() => { saveBtn.textContent = 'Save'; }, 1500);
+    };
+    if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+    if (saveBtn) saveBtn.addEventListener('click', apply);
+    const changeBtn = document.getElementById('cfg-change-sett');
+    if (changeBtn) changeBtn.addEventListener('click', () => {
+      setSettlement(null); settlement = null;
+      allItems = null; chains = null; buildsData = null; jobsData = null; membersData = null;
+      document.getElementById('search-input').value = '';
+      document.getElementById('search-results').innerHTML = '';
+      showView('setup');
+    });
+  }
 }
 
 function bindGoalEvents() {
@@ -852,9 +958,11 @@ function bindGoalEvents() {
       window._planSearch = '';
       _planSearchResults = null;
       localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
+      // Show loading, fetch full recipe tree, then reveal the requirements.
+      window._planLoading = true;
       renderTab('storage');
-      // Fetch full recipe tree for this item, then re-render
       await ensureGoalTree(id);
+      window._planLoading = false;
       renderTab('storage');
     });
   });
@@ -883,11 +991,9 @@ function bindGoalEvents() {
     localStorage.removeItem('bc-goals');
     renderTab('storage');
   });
-  // Re-fetch recipe trees for any goals not yet fully cached
-  const missingGoals = Object.keys(craftGoals).filter(id => !(id in recipeCache()));
-  if (missingGoals.length) {
-    Promise.all(missingGoals.map(id => ensureGoalTree(id))).then(() => renderTab('storage'));
-  }
+  // Load recipe trees for any goals not yet cached (guarded against re-entry).
+  const needLoad = Object.keys(craftGoals).some(id => !(id in recipeCache()));
+  if (needLoad) loadGoalTrees();
 }
 
 function bindAllItemsEvents() {
@@ -910,18 +1016,14 @@ function showView(id) {
 function startMain() {
   document.getElementById('settlement-label').textContent = settlement.name;
   document.getElementById('settlement-tier').style.display = 'none';
-  document.getElementById('footer-name').textContent = settlement.name;
   showView('main');
+  // If any goal's recipe tree isn't cached yet, start in the loading state so the
+  // craft plan doesn't flash a half-resolved tree before loadGoalTrees() kicks in.
+  window._planLoading = Object.keys(craftGoals).some(id => !(id in recipeCache()));
   renderTab(activeTab);
   pollAll();
-  startPollClock(30000);
-  onPollTick(() => {
-    if (activeTab === 'storage') pollStorage();
-    else if (activeTab === 'builds') pollBuilds();
-    else if (activeTab === 'jobs') pollJobs();
-    else if (activeTab === 'tasks') pollTasks();
-    else if (activeTab === 'members') pollMembers();
-  });
+  startPollClock(5000);
+  setInterval(() => { pollBuilds(); pollJobs(); pollMembers(); pollTasks(); }, 5000);
 }
 
 // Settlement search
@@ -957,8 +1059,8 @@ document.getElementById('tabs').addEventListener('click', e => {
   activeTab = id;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
   renderTab(id);
-  if (id === 'builds' && !buildsData) pollBuilds();
-  if (id === 'jobs' && !jobsData) pollJobs();
+  if (id === 'builds') pollBuilds();
+  if (id === 'jobs') pollJobs();
   if (id === 'members' && !membersData) pollMembers();
 });
 
@@ -974,13 +1076,6 @@ document.getElementById('drag-bar-setup').addEventListener('mousedown', e => {
 document.getElementById('close-btn-main').addEventListener('click', () => win?.close?.());
 document.getElementById('close-btn-setup').addEventListener('click', () => win?.close?.());
 document.getElementById('min-btn').addEventListener('click', () => win?.minimize?.());
-document.getElementById('change-btn').addEventListener('click', () => {
-  setSettlement(null); settlement = null;
-  allItems = null; chains = null; buildsData = null; jobsData = null; membersData = null;
-  document.getElementById('search-input').value = '';
-  document.getElementById('search-results').innerHTML = '';
-  showView('setup');
-});
 document.getElementById('search-btn').addEventListener('click', search);
 document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
 

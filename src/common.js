@@ -7,9 +7,34 @@ const _pollBus = new BroadcastChannel('bc-poll');
 function onPollTick(fn) { _pollBus.addEventListener('message', () => fn()); }
 function startPollClock(ms = 30000) { setInterval(() => _pollBus.postMessage('tick'), ms); }
 
-// Call the bitwasp REST API via the Rust backend (avoids CORS).
+// Rate-limited request queue: ~30 req/min (one per 2 s).
+// Duplicate paths collapse into a single queued request.
+const _reqQueue   = [];                // ordered list of paths to fetch
+const _reqWaiters = new Map();         // path → [{resolve,reject}]
+let _reqScheduled = false;
+
+function _drainQueue() {
+  if (_reqQueue.length === 0) { _reqScheduled = false; return; }
+  _reqScheduled = true;
+  const path = _reqQueue.shift();
+  const waiters = _reqWaiters.get(path) || [];
+  _reqWaiters.delete(path);
+  T.core.invoke('bitwasp', { path })
+    .then(r => waiters.forEach(w => w.resolve(r)))
+    .catch(e => waiters.forEach(w => w.reject(e)));
+  setTimeout(_drainQueue, 250);
+}
+
 async function bitwasp(path) {
-  return T.core.invoke('bitwasp', { path });
+  return new Promise((resolve, reject) => {
+    if (_reqWaiters.has(path)) {
+      _reqWaiters.get(path).push({ resolve, reject });
+    } else {
+      _reqWaiters.set(path, [{ resolve, reject }]);
+      _reqQueue.push(path);
+      if (!_reqScheduled) _drainQueue();
+    }
+  });
 }
 
 // Auto-hide overlay when BitCraft loses focus.

@@ -206,6 +206,13 @@ body {
 }
 .ai-name { flex: 1; font-size: 12px; }
 .ai-qty { font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--accent); }
+.item-icon {
+  width: 22px; height: 22px; flex-shrink: 0; object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 4px;
+}
+.item-icon.blank { visibility: hidden; }
+.cp-icon { width: 18px; height: 18px; margin-right: 6px; }
 .ai-tag { font-size: 9px; color: var(--dim2); background: var(--bg2); border: 1px solid var(--line);
   padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
 
@@ -265,6 +272,22 @@ body {
   font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .search-btn:hover { background: var(--accent); color: #fff; }
+
+/* ── settings page ──────────────────────────────────────────────── */
+.settings-page { padding: 14px 12px; display: flex; flex-direction: column; gap: 18px; }
+.settings-section { display: flex; flex-direction: column; gap: 5px; }
+.settings-label { font-size: 10px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.settings-row { display: flex; align-items: center; gap: 6px; }
+.settings-inp { flex: 1; }
+.settings-save {
+  -webkit-appearance: none; background: none; border: 1px solid var(--line);
+  border-radius: 7px; color: var(--dim); cursor: pointer; font-size: 11px;
+  padding: 5px 10px; white-space: nowrap; font-family: var(--ui);
+}
+.settings-save:hover { color: var(--txt); border-color: var(--accent); }
+.settings-value { font-size: 12px; color: var(--txt); flex: 1; }
+.settings-hint { font-size: 10px; color: var(--dim2); }
+.settings-version { font-size: 10px; color: var(--dim2); margin-top: auto; padding-top: 8px; }
 .search-result {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px;
   background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r);
