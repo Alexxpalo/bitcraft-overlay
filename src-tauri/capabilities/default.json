@@ -10,6 +10,7 @@
     "core:window:allow-set-always-on-top",
     "core:window:allow-is-always-on-top",
     "core:webview:allow-create-webview-window",
-    "updater:default"
+    "updater:default",
+    "notification:default"
   ]
 }

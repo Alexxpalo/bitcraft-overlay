@@ -61,6 +61,31 @@ async function doInstallUpdate() {
   }
 }
 
+// Desktop notification via the notification plugin (global Tauri API).
+// Requests permission on first use; silently no-ops if unavailable/denied.
+let _notifyPerm = null; // null=unknown, true/false once resolved
+async function notify(title, body) {
+  const n = T?.notification;
+  if (!n) return;
+  try {
+    if (_notifyPerm === null) {
+      _notifyPerm = await n.isPermissionGranted();
+      if (!_notifyPerm) _notifyPerm = (await n.requestPermission()) === 'granted';
+    }
+    if (_notifyPerm) n.sendNotification({ title, body });
+  } catch(e) {}
+}
+
+// Resolve notification permission once at startup so later notify() calls fire immediately.
+async function primeNotify() {
+  const n = T?.notification;
+  if (!n || _notifyPerm !== null) return;
+  try {
+    _notifyPerm = await n.isPermissionGranted();
+    if (!_notifyPerm) _notifyPerm = (await n.requestPermission()) === 'granted';
+  } catch(e) {}
+}
+
 function dismissUpdate() {
   const ver = document.getElementById('update-ver')?.textContent;
   if (ver) localStorage.setItem('bc-dismissed-update', ver);

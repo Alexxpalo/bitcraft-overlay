@@ -90,6 +90,17 @@
     .task-meta { display: flex; flex-direction: column; gap: 2px; font-size: 9.5px; font-family: var(--mono); }
     .task-need { color: var(--bad); }
     .task-reward { color: var(--good); }
+    .buffs { display: flex; flex-direction: column; gap: 5px; padding: 8px; }
+    .buff-card { background: var(--bg2); border: 1px solid var(--line); border-left: 2px solid var(--good); border-radius: 5px; padding: 6px 8px; }
+    .buff-card.bad { border-left-color: var(--bad); }
+    .buff-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .buff-name { font-size: 11px; font-weight: 600; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .buff-time { font-size: 10px; font-family: var(--mono); color: var(--dim2); flex-shrink: 0; }
+    .buff-time.low { color: var(--bad); }
+    .buff-desc { font-size: 10px; color: var(--dim); margin-top: 2px; line-height: 1.3; }
+    .buff-stats { font-size: 9.5px; font-family: var(--mono); color: var(--accent); margin-top: 3px; }
+    .settings-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--txt); padding: 3px 0; cursor: pointer; }
+    .settings-num { width: 64px !important; flex: none !important; text-align: right; }
   </style>
 </head>
 <body>
@@ -115,7 +126,6 @@
   <div id="view-main" style="display:none">
     <div class="dragbar" id="drag-bar-main">
       <span class="logo">BITWASP</span>
-      <span class="settlement-name" id="settlement-label"></span>
       <span class="settle-tier" id="settlement-tier"></span>
       <span class="grow"></span>
       <button class="winbtn" id="collapse-btn" title="Collapse">▲</button>
@@ -135,6 +145,7 @@
         <button class="tab" data-tab="builds">Builds</button>
         <button class="tab" data-tab="jobs">Jobs</button>
         <button class="tab" data-tab="tasks">Tasks</button>
+        <button class="tab" data-tab="buffs">Buffs</button>
         <button class="tab" data-tab="members">Members
           <span class="tab-badge" id="online-badge" style="display:none"></span>
         </button>
@@ -158,6 +169,9 @@ let buildsData = null;
 let jobsData = null;
 let membersData = null;
 let tasksData = null;  // null=idle, 'loading', 'noplayer', { tasks, items, cargo, skillMap, expiration }
+let buffsData = null;  // null=idle, 'loading', 'noplayer', { buffs, isOnline }
+const _buffWarned = new Set();   // `${buffId}:${buffStartTimestamp}` already warned this cycle
+const _craftTrack = new Map();   // craft entityId → { progress, changeTs, wasActive, warnedProgress }
 let claimData = null;
 let _skillMap = null;
 let itemsMap = {};
@@ -169,13 +183,13 @@ const ACTIVE_STALE_MS = 5000;
 const BG_STALE_MS = 30000;
 function _poll(tab) {
   _lastPoll[tab] = Date.now();
-  ({ storage: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks, claim: pollClaim })[tab]?.();
+  ({ storage: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks, buffs: pollBuffs, claim: pollClaim })[tab]?.();
 }
 function _pollIfStale(tab, staleMs) {
   if (Date.now() - (_lastPoll[tab] || 0) > staleMs) _poll(tab);
 }
 
-const TAB_ORDER = ['storage', 'builds', 'jobs', 'tasks', 'members', 'settings'];
+const TAB_ORDER = ['storage', 'builds', 'jobs', 'tasks', 'buffs', 'members', 'settings'];
 function switchTab(id) {
   if (!TAB_ORDER.includes(id) || id === activeTab) return;
   activeTab = id;
@@ -186,6 +200,13 @@ function switchTab(id) {
 }
 
 const fmt = n => Number(n).toLocaleString('en-US');
+// Compact thousands: 4865 → "4.9k", 150000 → "150k", 999 → "999".
+const fmtK = n => {
+  n = Number(n) || 0;
+  if (n < 1000) return fmt(n);
+  const v = n / 1000;
+  return (v >= 100 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, '')) + 'k';
+};
 // esc() comes from common.js
 
 // ─── Item icons ───────────────────────────────────────────────────────────
@@ -402,6 +423,136 @@ function taskItemName(td, ref) {
   return meta ? meta.name : `#${ref.item_id}`;
 }
 
+// ─── Buffs ──────────────────────────────────────────────────────────────────
+const fmtDur = secs => {
+  secs = Math.max(0, Math.floor(secs));
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+};
+
+async function pollBuffs() {
+  if (!localStorage.getItem('bc-tasks-player')) { buffsData = 'noplayer'; if (activeTab === 'buffs') renderTab('buffs'); return; }
+  const id = await resolveTasksPlayerId();
+  if (!id) { buffsData = 'noplayer'; if (activeTab === 'buffs') renderTab('buffs'); return; }
+  try {
+    const j = await bitwasp(`players/${id}/buffs`);
+    const buffs = (j.buffs || []).filter(b => b.status !== 'expired' && (b.timeRemaining > 0 || b.buffDuration === 0));
+    buffsData = { buffs, isOnline: !!j.isOnline };
+  } catch(e) { buffsData = { buffs: [], isOnline: false }; console.error('buffs poll:', e); }
+  checkBuffExpiry();
+  if (activeTab === 'buffs') renderTab('buffs');
+}
+
+function checkBuffExpiry() {
+  if (localStorage.getItem('bc-buff-notify') === '0') return;
+  if (!buffsData || typeof buffsData !== 'object') return;
+  const lead = Number(localStorage.getItem('bc-buff-notify-lead')) || 60;
+  const present = new Set();
+  for (const b of buffsData.buffs) {
+    // Only warn for buffs long enough that crossing the lead window is a real
+    // "about to expire" event — short/recurring buffs would always be ≤ lead.
+    if (!b.beneficial || !(b.buffDuration > lead)) continue;
+    present.add(b.buffId);
+    if (b.timeRemaining > 0 && b.timeRemaining <= lead && !_buffWarned.has(b.buffId)) {
+      _buffWarned.add(b.buffId);
+      notify('Buff expiring', `${b.buffName} — ${fmtDur(b.timeRemaining)} left`);
+    }
+  }
+  // Re-arm a buff only once it has disappeared (e.g. expired, then re-applied).
+  for (const id of [..._buffWarned]) if (!present.has(id)) _buffWarned.delete(id);
+}
+
+function renderBuffs() {
+  const name = localStorage.getItem('bc-tasks-player') || '';
+  if (!name || buffsData === 'noplayer') return '<div class="hint">Set your player name in Settings to track buffs.</div>';
+  if (buffsData === null || buffsData === 'loading') { if (buffsData === null) { buffsData = 'loading'; setTimeout(pollBuffs, 0); } return '<div class="hint">Loading…</div>'; }
+  const buffs = buffsData.buffs || [];
+  if (!buffs.length) return `<div class="hint">No active buffs${buffsData.isOnline ? '' : ' (player offline)'}.</div>`;
+  const sorted = [...buffs].sort((a, b) => {
+    const pa = a.buffDuration === 0, pb = b.buffDuration === 0;
+    if (pa !== pb) return pa ? 1 : -1;            // permanent buffs last
+    return (a.timeRemaining || 0) - (b.timeRemaining || 0);
+  });
+  const cards = sorted.map(b => {
+    const perm = b.buffDuration === 0;
+    const expires = (b.buffStartTimestamp + b.buffDuration) * 1000;
+    const stats = (b.stats || []).map(s => {
+      const v = s.is_pct ? `${Math.round(s.value * 100)}%` : `${s.value}${s.suffix || ''}`;
+      const sign = (!s.is_pct && s.value > 0) ? '+' : (s.is_pct && s.value > 0 ? '+' : '');
+      return `${sign}${v} ${esc(s.name || '')}`.trim();
+    }).join(' · ');
+    const timeHtml = perm
+      ? '<span class="buff-time">∞</span>'
+      : `<span class="buff-time" data-expires="${expires}">${esc(fmtDur(b.timeRemaining))}</span>`;
+    return `<div class="buff-card ${b.beneficial ? 'good' : 'bad'}">
+      <div class="buff-head">
+        <span class="buff-name" title="${esc(b.buffName || '')}">${esc(b.buffName || 'Buff')}</span>
+        ${timeHtml}
+      </div>
+      ${b.description ? `<div class="buff-desc">${esc(b.description)}</div>` : ''}
+      ${stats ? `<div class="buff-stats">${stats}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="buffs">${cards}</div>`;
+}
+
+function tickBuffs() {
+  if (activeTab !== 'buffs') return;
+  const now = Date.now();
+  document.querySelectorAll('.buff-time[data-expires]').forEach(el => {
+    const ms = Number(el.dataset.expires) - now;
+    el.textContent = ms <= 0 ? 'expired' : fmtDur(ms / 1000);
+    el.classList.toggle('low', ms > 0 && ms <= 60000);
+  });
+}
+
+// ─── Craft-stall detection (background notification) ─────────────────────────
+async function pollCraftStall() {
+  if (localStorage.getItem('bc-craft-notify') === '0') return;
+  if (!localStorage.getItem('bc-tasks-player')) return;
+  const id = await resolveTasksPlayerId();
+  if (!id) return;
+  let crafts;
+  try {
+    const j = await bitwasp(`players/${id}/crafts?completed=false`);
+    crafts = j.craftResults || [];
+    for (const it of (j.items || [])) itemsMap[it.id] = it.name;
+  } catch(e) { console.error('craft-stall poll:', e); return; }
+  const now = Date.now();
+  const stallMs = (Number(localStorage.getItem('bc-craft-stall-sec')) || 3) * 1000;
+  const present = new Set();
+  for (const c of crafts) {
+    if (c.completed) continue;
+    const key = String(c.entityId);
+    present.add(key);
+    const progress = Number(c.progress) || 0;
+    const prev = _craftTrack.get(key);
+    if (!prev) { _craftTrack.set(key, { progress, changeTs: now, streak: 0, armed: false, warned: false }); continue; }
+    if (progress > prev.progress) {
+      // Advancing. Build a streak; only sustained progress (≥2 consecutive polls)
+      // counts as real channeling, which arms — and re-arms — the detector.
+      prev.progress = progress;
+      prev.changeTs = now;
+      prev.streak += 1;
+      if (prev.streak >= 2) { prev.armed = true; prev.warned = false; }
+    } else {
+      // Frozen this poll. A single freeze breaks the streak so a lone nytkähdys
+      // can't re-arm. Warn once per stop episode, and only if it was channeling.
+      prev.streak = 0;
+      if (prev.armed && !prev.warned && now - prev.changeTs >= stallMs) {
+        const item = (c.craftedItem || [])[0];
+        const name = (item && itemsMap[item.item_id]) || c.buildingName || 'Craft';
+        const stallSec = Math.round(stallMs / 1000);
+        notify('Crafting stopped', `${name} — no progress for ${stallSec}s (out of stamina?)`);
+        prev.warned = true;
+      }
+    }
+  }
+  for (const key of [..._craftTrack.keys()]) if (!present.has(key)) _craftTrack.delete(key);
+}
+
 async function pollClaim() {
   if (!settlement) return;
   try {
@@ -427,12 +578,12 @@ function updateSupplies() {
       low = ms < 86400000; // < 24 h
       const h = Math.floor(ms / 3600000);
       const d = Math.floor(h / 24);
-      timeStr = d > 0 ? `${d}d ${h % 24}h` : `${h}h`;
+      timeStr = d > 3 ? `${d}d` : d > 0 ? `${d}d ${h % 24}h` : `${h}h`;
     }
   }
   el.className = 'settle-tier' + (low ? ' low' : '');
   el.style.display = '';
-  el.textContent = `T${tier} · ◆ ${fmt(supplies)}${timeStr ? ' · ' + timeStr : ''}`;
+  el.textContent = `T${tier} · ◆ ${fmtK(supplies)}${timeStr ? ' · ' + timeStr : ''}`;
 }
 
 function updateOnlineBadge() {
@@ -444,7 +595,7 @@ function updateOnlineBadge() {
 }
 
 function pollAll() {
-  for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'claim']) _poll(tab);
+  for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'buffs', 'claim']) _poll(tab);
 }
 
 // ─── Tab rendering ────────────────────────────────────────────────────────
@@ -459,6 +610,7 @@ function renderTab(id) {
     builds:   renderBuilds,
     jobs:     renderJobs,
     tasks:    renderTasks,
+    buffs:    renderBuffs,
     members:  renderMembers,
     settings: renderSettings,
   }[id]?.() || '';
@@ -702,8 +854,8 @@ function renderBuilds() {
   return '<div class="builds">' + buildsData.map(p => {
     const req = p.actionsRequired || 0;
     const prog = p.progress || 0;
-    const pct = req ? Math.round(prog / req * 100) : 0;
-    const done = pct >= 100;
+    const done = req > 0 && prog >= req;
+    const pct = req ? Math.min(100, Math.floor(prog / req * 100)) : 0;
     const mats = [...(p.items || []), ...(p.cargos || [])].map(m => {
       const name = nameMap[m.item_id] || `#${m.item_id}`;
       return `<span class="need"><span>${esc(name)}</span><b>${fmt(m.quantity)}</b></span>`;
@@ -730,8 +882,8 @@ function renderJobs() {
     const qty = job.craftCount || 0;
     const prog = job.progress || 0;
     const total = job.totalActionsRequired || 0;
-    const pct = total > 0 ? Math.round(prog / total * 100) : 0;
-    const done = pct >= 100;
+    const done = total > 0 && prog >= total;
+    const pct = total > 0 ? Math.min(100, Math.floor(prog / total * 100)) : 0;
     return `<div class="card">
       <div class="card-head">
         <span class="card-title">${esc(name)}${qty > 1 ? ` <span class="job-count">×${qty}</span>` : ''}</span>
@@ -829,6 +981,20 @@ function renderSettings() {
         <button class="change-btn" id="cfg-change-sett">Change</button>
       </div>
     </div>
+    <div class="settings-section">
+      <div class="settings-label">Notifications</div>
+      <label class="settings-check"><input type="checkbox" id="cfg-buff-notify" ${localStorage.getItem('bc-buff-notify') === '0' ? '' : 'checked'}> Notify before buffs expire</label>
+      <div class="settings-row">
+        <span class="settings-value">Lead time (s)</span>
+        <input class="inp settings-inp settings-num" id="cfg-buff-lead" type="number" min="5" value="${esc(localStorage.getItem('bc-buff-notify-lead') || '60')}">
+      </div>
+      <label class="settings-check"><input type="checkbox" id="cfg-craft-notify" ${localStorage.getItem('bc-craft-notify') === '0' ? '' : 'checked'}> Notify on craft stall</label>
+      <div class="settings-row">
+        <span class="settings-value">Stall threshold (s)</span>
+        <input class="inp settings-inp settings-num" id="cfg-craft-stall" type="number" min="1" value="${esc(localStorage.getItem('bc-craft-stall-sec') || '3')}">
+      </div>
+      <button class="settings-save" id="cfg-test-notify" style="margin-top:6px">Test notification</button>
+    </div>
     <div class="settings-version">${window._appVersion ? 'v' + esc(window._appVersion) : ''}</div>
   </div>`;
 }
@@ -885,6 +1051,22 @@ function bindTabEvents(id) {
     };
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
     if (saveBtn) saveBtn.addEventListener('click', apply);
+    const buffChk = document.getElementById('cfg-buff-notify');
+    if (buffChk) buffChk.addEventListener('change', () => localStorage.setItem('bc-buff-notify', buffChk.checked ? '1' : '0'));
+    const buffLead = document.getElementById('cfg-buff-lead');
+    if (buffLead) {
+      buffLead.addEventListener('mousedown', e => e.stopPropagation());
+      buffLead.addEventListener('change', () => localStorage.setItem('bc-buff-notify-lead', String(Math.max(5, parseInt(buffLead.value) || 60))));
+    }
+    const craftChk = document.getElementById('cfg-craft-notify');
+    if (craftChk) craftChk.addEventListener('change', () => localStorage.setItem('bc-craft-notify', craftChk.checked ? '1' : '0'));
+    const craftStall = document.getElementById('cfg-craft-stall');
+    if (craftStall) {
+      craftStall.addEventListener('mousedown', e => e.stopPropagation());
+      craftStall.addEventListener('change', () => localStorage.setItem('bc-craft-stall-sec', String(Math.max(1, parseInt(craftStall.value) || 3))));
+    }
+    const testBtn = document.getElementById('cfg-test-notify');
+    if (testBtn) testBtn.addEventListener('click', () => notify('BitCraft Overlay', 'Notifications are working'));
     const changeBtn = document.getElementById('cfg-change-sett');
     if (changeBtn) changeBtn.addEventListener('click', () => {
       setSettlement(null); settlement = null;
@@ -976,7 +1158,6 @@ function showView(id) {
 }
 
 function startMain() {
-  document.getElementById('settlement-label').textContent = settlement.name;
   updateSupplies();
   showView('main');
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === activeTab));
@@ -987,11 +1168,13 @@ function startMain() {
   pollAll();
   setInterval(() => {
     _pollIfStale(activeTab, ACTIVE_STALE_MS);
-    for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks']) {
+    for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'buffs']) {
       if (tab !== activeTab) _pollIfStale(tab, BG_STALE_MS);
     }
     _pollIfStale('claim', BG_STALE_MS);
   }, 5000);
+  setInterval(tickBuffs, 1000);          // live buff countdown
+  setInterval(pollCraftStall, 2000);     // background craft-stall detector (2s for sub-3s detection)
 }
 
 // Settlement search
@@ -1109,6 +1292,7 @@ document.getElementById('collapse-btn').addEventListener('click', async () => {
 if (settlement) startMain();
 else showView('setup');
 checkForUpdate();
+primeNotify();
 T?.core?.invoke('app_version').then(v => {
   window._appVersion = v;
   if (activeTab === 'settings') renderTab('settings');
