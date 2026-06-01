@@ -54,32 +54,6 @@ jobs:
           prerelease: false
           includeUpdaterJson: false
 
-      - name: Upload Linux updater files
-        if: matrix.os == 'ubuntu-22.04'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.ref_name }}"
-          for f in src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz \
-                    src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz.sig; do
-            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber || true
-          done
-
-      - name: Upload Windows updater files
-        if: matrix.os == 'windows-latest'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: powershell
-        run: |
-          $tag = "${{ github.ref_name }}"
-          foreach ($bundle in @("nsis", "msi")) {
-            $dir = "src-tauri/target/release/bundle/$bundle"
-            if (Test-Path $dir) {
-              Get-ChildItem $dir -Recurse -Include "*.zip","*.zip.sig" |
-                ForEach-Object { gh release upload $tag $_.FullName --clobber 2>$null }
-            }
-          }
-
   updater-json:
     needs: publish
     runs-on: ubuntu-latest
@@ -95,22 +69,23 @@ jobs:
           REPO="${{ github.repository }}"
           mkdir -p /tmp/sigs
 
+          # Tauri 2.0 (createUpdaterArtifacts) signs the installers directly:
+          # Linux -> *.AppImage(.sig), Windows NSIS -> *-setup.exe(.sig)
           gh release download "$TAG" --repo "$REPO" \
-            --pattern "*.AppImage.tar.gz.sig" \
-            --pattern "*.nsis.zip.sig" \
-            --pattern "*.msi.zip.sig" \
+            --pattern "*.AppImage.sig" \
+            --pattern "*-setup.exe.sig" \
             --dir /tmp/sigs 2>/dev/null || true
 
-          LINUX_SIG_FILE=$(ls /tmp/sigs/*.AppImage.tar.gz.sig 2>/dev/null | head -1)
-          WIN_SIG_FILE=$(ls /tmp/sigs/*.nsis.zip.sig /tmp/sigs/*.msi.zip.sig 2>/dev/null | head -1)
+          LINUX_SIG_FILE=$(ls /tmp/sigs/*.AppImage.sig 2>/dev/null | head -1)
+          WIN_SIG_FILE=$(ls /tmp/sigs/*-setup.exe.sig 2>/dev/null | head -1)
 
           LINUX_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
-            -q '.assets[] | select(.name | endswith(".AppImage.tar.gz")) | .browserDownloadUrl' | head -1)
+            -q '.assets[] | select(.name | endswith(".AppImage")) | .url' | head -1)
           WIN_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
-            -q '.assets[] | select(.name | (endswith(".nsis.zip") or endswith(".msi.zip"))) | .browserDownloadUrl' | head -1)
+            -q '.assets[] | select(.name | endswith("-setup.exe")) | .url' | head -1)
 
-          echo "Linux sig: $LINUX_SIG_FILE"
-          echo "Windows sig: $WIN_SIG_FILE"
+          echo "Linux  sig: $LINUX_SIG_FILE  url: $LINUX_URL"
+          echo "Windows sig: $WIN_SIG_FILE  url: $WIN_URL"
 
           PLATFORMS="{}"
 
@@ -126,6 +101,11 @@ jobs:
             PLATFORMS=$(echo "$PLATFORMS" | jq \
               --arg sig "$WIN_SIG" --arg url "$WIN_URL" \
               '. + {"windows-x86_64": {"signature": $sig, "url": $url}}')
+          fi
+
+          if [ "$PLATFORMS" = "{}" ]; then
+            echo "ERROR: no updater platforms resolved — auto-update would be broken" >&2
+            exit 1
           fi
 
           jq -n \
