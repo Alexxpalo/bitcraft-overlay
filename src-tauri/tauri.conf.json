@@ -1,6 +1,6 @@
 {
   "productName": "BitCraft Overlay",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "identifier": "com.bitcraft.overlay",
   "build": {
     "frontendDist": "../src"
@@ -28,6 +28,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
