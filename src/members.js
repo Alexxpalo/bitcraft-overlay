@@ -23,7 +23,6 @@ async function poll() {
       const status = await fetchStatus(c.userName);
       const item = membersData.find(m => m.userName === c.userName);
       if (item) { item.signedIn = status?.signedIn ?? false; item.lastLogin = status?.lastLogin ?? null; }
-      render();
     }));
     setStatus('● live', 'ok');
   } catch(e) {

@@ -13,8 +13,8 @@ async function poll() {
   setStatus('refreshing…');
   await Promise.all(watched.map(async n => {
     try { players.set(n, await fetchPlayer(n)); } catch (e) { /* keep old */ }
-    render();
   }));
+  render();
   setStatus('● live', 'ok');
 }
 

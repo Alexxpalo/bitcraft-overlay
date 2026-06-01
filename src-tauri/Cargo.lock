@@ -120,7 +120,7 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitcraft-overlay"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "reqwest 0.12.28",
  "serde",
