@@ -1,6 +1,6 @@
 [package]
 name = "bitcraft-overlay"
-version = "0.2.10"
+version = "0.2.12"
 edition = "2021"
 description = "BitCraft game overlay"
 
