@@ -17,7 +17,7 @@ const LS = {
   craftStallSec:  'bc-craft-stall-sec',
   posMain:        'bc-pos-main',
   hMain:          'bc-h-main',
-  wMain:          'bc-w-main',
+  collapsed:      'bc-collapsed',
 };
 
 // Request queue: at most one request per 250 ms (~4 req/s ceiling). Identical
@@ -33,9 +33,18 @@ function _drainQueue() {
   const waiters = _reqWaiters.get(path) || [];
   _reqWaiters.delete(path);
   T.core.invoke('bitwasp', { path })
-    .then(r => waiters.forEach(w => w.resolve(r)))
-    .catch(e => waiters.forEach(w => w.reject(e)));
+    .then(r => { reportApi(true);  waiters.forEach(w => w.resolve(r)); })
+    .catch(e => { reportApi(false); waiters.forEach(w => w.reject(e)); });
   setTimeout(_drainQueue, 250);
+}
+
+// API health indicator. Surface a header warning only after a sustained failure
+// streak — a lone 404/transient blip resets on the next successful request.
+let _apiFail = 0;
+function reportApi(ok) {
+  _apiFail = ok ? 0 : _apiFail + 1;
+  const el = document.getElementById('api-health');
+  if (el) el.style.display = _apiFail >= 2 ? '' : 'none';
 }
 
 async function bitwasp(path) {
@@ -77,12 +86,14 @@ async function checkForUpdate() {
 
 async function doInstallUpdate() {
   if (!T?.core) return;
-  document.getElementById('update-banner').innerHTML = '<span>Ladataan päivitystä…</span>';
+  document.getElementById('update-banner').innerHTML = '<span>Downloading update…</span>';
   try {
     await T.core.invoke('install_update');
   } catch(e) {
-    document.getElementById('update-banner').innerHTML =
-      `<span>Virhe: ${esc(String(e))}</span><button onclick="dismissUpdate()">✕</button>`;
+    const banner = document.getElementById('update-banner');
+    banner.innerHTML = `<span>Error: ${esc(String(e))}</span><button id="update-err-dismiss">✕</button>`;
+    // No inline onclick — blocked under CSP; bind explicitly.
+    document.getElementById('update-err-dismiss')?.addEventListener('click', dismissUpdate);
   }
 }
 

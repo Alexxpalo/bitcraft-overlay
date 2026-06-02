@@ -1,6 +1,6 @@
 {
   "productName": "BitCraft Overlay",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "identifier": "com.bitcraft.overlay",
   "build": {
     "frontendDist": "../src"
@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' https://bitjita.com asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; media-src 'self'"
     }
   },
   "bundle": {
