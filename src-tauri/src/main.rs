@@ -9,6 +9,7 @@ fn http_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .user_agent("bitcraft-overlay")
+            .timeout(std::time::Duration::from_secs(15))
             .build()
             .expect("failed to build HTTP client")
     })
@@ -113,7 +114,7 @@ fn main() {
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    std::process::exit(0);
+                    window.app_handle().exit(0);
                 }
             }
         })
@@ -135,6 +136,7 @@ fn main() {
                     use std::time::{Duration, SystemTime};
                     let src = std::path::PathBuf::from("../src");
                     let mut stamps: HashMap<String, SystemTime> = HashMap::new();
+                    let mut first_run = true;
                     loop {
                         std::thread::sleep(Duration::from_millis(600));
                         if let Ok(entries) = std::fs::read_dir(&src) {
@@ -144,12 +146,15 @@ fn main() {
                                     if let Ok(t) = meta.modified() {
                                         let k = e.file_name().to_string_lossy().to_string();
                                         if stamps.get(&k).map_or(true, |old| *old != t) {
-                                            if stamps.contains_key(&k) { changed = true; }
+                                            // Reload on any change after the initial scan,
+                                            // including newly added files.
+                                            if !first_run { changed = true; }
                                             stamps.insert(k, t);
                                         }
                                     }
                                 }
                             }
+                            first_run = false;
                             if changed {
                                 for (_, w) in handle.webview_windows() {
                                     let _ = w.eval("location.reload()");

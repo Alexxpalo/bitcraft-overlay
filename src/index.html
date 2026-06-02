@@ -162,7 +162,7 @@
 <script>
 // ─── State ────────────────────────────────────────────────────────────────
 let settlement = getSettlement();
-let activeTab = localStorage.getItem('bc-active-tab') || 'storage';
+let activeTab = localStorage.getItem(LS.activeTab) || 'storage';
 let storageMode = 'plan'; // 'plan' | 'items'
 let allItems = null;
 let buildsData = null;
@@ -170,12 +170,12 @@ let jobsData = null;
 let membersData = null;
 let tasksData = null;  // null=idle, 'loading', 'noplayer', { tasks, items, cargo, skillMap, expiration }
 let buffsData = null;  // null=idle, 'loading', 'noplayer', { buffs, isOnline }
-const _buffWarned = new Set();   // `${buffId}:${buffStartTimestamp}` already warned this cycle
-const _craftTrack = new Map();   // craft entityId → { progress, changeTs, wasActive, warnedProgress }
+const _buffWarned = new Set();   // buffIds already warned this episode (re-armed when the buff disappears)
+const _craftTrack = new Map();   // craft entityId → { progress, changeTs, armed, warned }
 let claimData = null;
 let _skillMap = null;
-let itemsMap = {};
-let craftGoals = JSON.parse(localStorage.getItem('bc-goals') || '{}');
+let itemsMap = safeParse(localStorage.getItem(LS.itemsMap), {}); // id → name, single in-memory cache
+let craftGoals = safeParse(localStorage.getItem(LS.goals), {});
 let _planSearchResults = null; // null=idle, 'loading', []=results
 
 const _lastPoll = {};
@@ -193,7 +193,7 @@ const TAB_ORDER = ['storage', 'builds', 'jobs', 'tasks', 'buffs', 'members', 'se
 function switchTab(id) {
   if (!TAB_ORDER.includes(id) || id === activeTab) return;
   activeTab = id;
-  localStorage.setItem('bc-active-tab', id);
+  localStorage.setItem(LS.activeTab, id);
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
   renderTab(id);
   _pollIfStale(id, ACTIVE_STALE_MS);
@@ -219,12 +219,12 @@ function normIcon(asset) {
   return String(asset || '').replace(/^\/+/, '').replace(/^GeneratedIcons\//, '');
 }
 let _iconMap = null;
-function iconMap() { return _iconMap ?? (_iconMap = JSON.parse(localStorage.getItem('bc-icons-map') || '{}')); }
+function iconMap() { return _iconMap ?? (_iconMap = JSON.parse(localStorage.getItem(LS.iconsMap) || '{}')); }
 function saveIcon(id, asset) {
   if (!id || !asset) return;
   const a = normIcon(asset);
   const m = iconMap();
-  if (m[id] !== a) { m[id] = a; localStorage.setItem('bc-icons-map', JSON.stringify(m)); }
+  if (m[id] !== a) { m[id] = a; localStorage.setItem(LS.iconsMap, JSON.stringify(m)); }
 }
 function iconImg(asset, cls = 'item-icon') {
   const a = normIcon(asset);
@@ -245,7 +245,7 @@ function saveRecipeEntry(id, val) {
 function _saveName(id, name) {
   if (!name || itemsMap[id]) return;
   itemsMap[id] = name;
-  localStorage.setItem('bc-items-map', JSON.stringify(itemsMap));
+  localStorage.setItem(LS.itemsMap, JSON.stringify(itemsMap));
 }
 
 const _recipeInFlight = new Map();
@@ -323,9 +323,9 @@ async function pollStorage() {
       }
     }
     const ids = Object.keys(totals);
-    itemsMap = {};
+    // Merge (don't wipe) so names learned from jobs/recipes/tasks survive.
     for (const [id, m] of Object.entries(im)) itemsMap[id] = m.name;
-    localStorage.setItem('bc-items-map', JSON.stringify(itemsMap));
+    localStorage.setItem(LS.itemsMap, JSON.stringify(itemsMap));
 
     allItems = ids.map(id => {
       const m = im[id] || { name: `#${id}`, tag: '', icon: '' };
@@ -373,16 +373,16 @@ async function pollMembers() {
 
 // ─── Traveler tasks ───────────────────────────────────────────────────────
 async function resolveTasksPlayerId() {
-  const name = localStorage.getItem('bc-tasks-player');
+  const name = localStorage.getItem(LS.tasksPlayer);
   if (!name) return null;
-  const cached = localStorage.getItem('bc-tasks-player-id');
+  const cached = localStorage.getItem(LS.tasksPlayerId);
   if (cached) return cached;
   try {
     const j = await bitwasp(`players?q=${encodeURIComponent(name)}`);
     const p = (j.players || []).find(pl => (pl.username || '').toLowerCase() === name.toLowerCase());
     if (!p) return null;
     const id = String(p.entityId || '');
-    if (id) localStorage.setItem('bc-tasks-player-id', id);
+    if (id) localStorage.setItem(LS.tasksPlayerId, id);
     return id || null;
   } catch { return null; }
 }
@@ -401,7 +401,7 @@ async function getSkillMap() {
 }
 
 async function pollTasks() {
-  if (!localStorage.getItem('bc-tasks-player')) { tasksData = null; if (activeTab === 'tasks') renderTab('tasks'); return; }
+  if (!localStorage.getItem(LS.tasksPlayer)) { tasksData = null; if (activeTab === 'tasks') renderTab('tasks'); return; }
   const id = await resolveTasksPlayerId();
   if (!id) { tasksData = 'noplayer'; if (activeTab === 'tasks') renderTab('tasks'); return; }
   try {
@@ -431,9 +431,14 @@ const fmtDur = secs => {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 };
+// Coarse countdown from a millisecond delta: "13d" (>3d), "3d 5h", or "5h".
+const fmtCountdown = ms => {
+  const h = Math.floor(Math.max(0, ms) / 3600000), d = Math.floor(h / 24);
+  return d > 3 ? `${d}d` : d > 0 ? `${d}d ${h % 24}h` : `${h}h`;
+};
 
 async function pollBuffs() {
-  if (!localStorage.getItem('bc-tasks-player')) { buffsData = 'noplayer'; if (activeTab === 'buffs') renderTab('buffs'); return; }
+  if (!localStorage.getItem(LS.tasksPlayer)) { buffsData = 'noplayer'; if (activeTab === 'buffs') renderTab('buffs'); return; }
   const id = await resolveTasksPlayerId();
   if (!id) { buffsData = 'noplayer'; if (activeTab === 'buffs') renderTab('buffs'); return; }
   try {
@@ -446,9 +451,9 @@ async function pollBuffs() {
 }
 
 function checkBuffExpiry() {
-  if (localStorage.getItem('bc-buff-notify') === '0') return;
+  if (localStorage.getItem(LS.buffNotify) === '0') return;
   if (!buffsData || typeof buffsData !== 'object') return;
-  const lead = Number(localStorage.getItem('bc-buff-notify-lead')) || 60;
+  const lead = Number(localStorage.getItem(LS.buffNotifyLead)) || 60;
   const present = new Set();
   for (const b of buffsData.buffs) {
     // Only warn for buffs long enough that crossing the lead window is a real
@@ -465,7 +470,7 @@ function checkBuffExpiry() {
 }
 
 function renderBuffs() {
-  const name = localStorage.getItem('bc-tasks-player') || '';
+  const name = localStorage.getItem(LS.tasksPlayer) || '';
   if (!name || buffsData === 'noplayer') return '<div class="hint">Set your player name in Settings to track buffs.</div>';
   if (buffsData === null || buffsData === 'loading') { if (buffsData === null) { buffsData = 'loading'; setTimeout(pollBuffs, 0); } return '<div class="hint">Loading…</div>'; }
   const buffs = buffsData.buffs || [];
@@ -479,7 +484,7 @@ function renderBuffs() {
     const perm = b.buffDuration === 0;
     const expires = (b.buffStartTimestamp + b.buffDuration) * 1000;
     const stats = (b.stats || []).map(s => {
-      const v = s.is_pct ? `${Math.round(s.value * 100)}%` : `${s.value}${s.suffix || ''}`;
+      const v = s.is_pct ? `${Math.round(s.value * 100)}%` : `${s.value}${esc(s.suffix || '')}`;
       const sign = (!s.is_pct && s.value > 0) ? '+' : (s.is_pct && s.value > 0 ? '+' : '');
       return `${sign}${v} ${esc(s.name || '')}`.trim();
     }).join(' · ');
@@ -510,8 +515,8 @@ function tickBuffs() {
 
 // ─── Craft-stall detection (background notification) ─────────────────────────
 async function pollCraftStall() {
-  if (localStorage.getItem('bc-craft-notify') === '0') return;
-  if (!localStorage.getItem('bc-tasks-player')) return;
+  if (localStorage.getItem(LS.craftNotify) === '0') return;
+  if (!localStorage.getItem(LS.tasksPlayer)) return;
   const id = await resolveTasksPlayerId();
   if (!id) return;
   let crafts;
@@ -521,7 +526,7 @@ async function pollCraftStall() {
     for (const it of (j.items || [])) itemsMap[it.id] = it.name;
   } catch(e) { console.error('craft-stall poll:', e); return; }
   const now = Date.now();
-  const stallMs = (Number(localStorage.getItem('bc-craft-stall-sec')) || 3) * 1000;
+  const stallMs = (Number(localStorage.getItem(LS.craftStallSec)) || 5) * 1000;
   const present = new Set();
   for (const c of crafts) {
     if (c.completed) continue;
@@ -529,18 +534,18 @@ async function pollCraftStall() {
     present.add(key);
     const progress = Number(c.progress) || 0;
     const prev = _craftTrack.get(key);
-    if (!prev) { _craftTrack.set(key, { progress, changeTs: now, streak: 0, armed: false, warned: false }); continue; }
+    if (!prev) { _craftTrack.set(key, { progress, changeTs: now, armed: false, warned: false }); continue; }
     if (progress > prev.progress) {
-      // Advancing. Build a streak; only sustained progress (≥2 consecutive polls)
-      // counts as real channeling, which arms — and re-arms — the detector.
+      // Advancing. Any observed progress arms — and re-arms — the detector.
+      // (Progress commits in bursts, so requiring consecutive advancing polls
+      // would almost never arm and the alert would never fire.)
       prev.progress = progress;
       prev.changeTs = now;
-      prev.streak += 1;
-      if (prev.streak >= 2) { prev.armed = true; prev.warned = false; }
+      prev.armed = true;
+      prev.warned = false;
     } else {
-      // Frozen this poll. A single freeze breaks the streak so a lone nytkähdys
-      // can't re-arm. Warn once per stop episode, and only if it was channeling.
-      prev.streak = 0;
+      // Frozen this poll. Warn once per stop episode (warned), and only if we
+      // saw it advance at least once (armed). A later advance re-arms it.
       if (prev.armed && !prev.warned && now - prev.changeTs >= stallMs) {
         const item = (c.craftedItem || [])[0];
         const name = (item && itemsMap[item.item_id]) || c.buildingName || 'Craft';
@@ -574,12 +579,7 @@ function updateSupplies() {
   if (runOut) {
     const ms = runOut - Date.now();
     if (ms <= 0) { timeStr = 'empty'; low = true; }
-    else {
-      low = ms < 86400000; // < 24 h
-      const h = Math.floor(ms / 3600000);
-      const d = Math.floor(h / 24);
-      timeStr = d > 3 ? `${d}d` : d > 0 ? `${d}d ${h % 24}h` : `${h}h`;
-    }
+    else { low = ms < 86400000; /* < 24 h */ timeStr = fmtCountdown(ms); }
   }
   el.className = 'settle-tier' + (low ? ' low' : '');
   el.style.display = '';
@@ -654,10 +654,7 @@ async function doPlanSearch(q) {
         icon: it.iconAssetName || '',
       };
     });
-    const map = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
-    let dirty = false;
-    for (const r of _planSearchResults) { if (!map[r.id]) { map[r.id] = r.name; dirty = true; } }
-    if (dirty) localStorage.setItem('bc-items-map', JSON.stringify(map));
+    for (const r of _planSearchResults) _saveName(r.id, r.name);
   } catch(e) { _planSearchResults = []; }
   if ((window._planSearch || '') === q) renderTab('storage');
 }
@@ -705,11 +702,10 @@ function renderPlanEditor() {
       resultsHtml = `<div class="plan-results"><div class="hint" style="padding:6px 9px">No match</div></div>`;
     }
   }
-  const namesMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
   const icons = iconMap();
   const planItems = Object.entries(craftGoals).map(([id, qty]) => {
     const inv = (allItems || []).find(i => i.id === id);
-    const name = inv?.name || namesMap[id];
+    const name = inv?.name || itemsMap[id];
     return name ? { id, name, qty, icon: icons[id] || inv?.icon || '' } : null;
   }).filter(Boolean);
   let planHtml = '';
@@ -765,7 +761,6 @@ function renderByStage() {
   const needs = computeNeeds();
   if (!Object.keys(needs).length) return '';
   const cache = recipeCache();
-  const nm = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
   const icons = iconMap();
   const invById = Object.fromEntries((allItems || []).map(i => [i.id, i]));
 
@@ -785,7 +780,7 @@ function renderByStage() {
   for (const id of Object.keys(needs)) {
     const inv = invById[id];
     const r = cache[id];
-    const name = inv?.name || nm[id] || r?.name || `Item ${id.slice(-6)}`;
+    const name = inv?.name || itemsMap[id] || r?.name || `Item ${id.slice(-6)}`;
     const tag  = inv?.tag  || r?.tag  || 'Other';
     const qty  = inv?.qty  ?? 0;
     const s = depth(id);
@@ -850,14 +845,13 @@ function renderAllItems() {
 function renderBuilds() {
   if (!buildsData) return '<div class="hint">Loading…</div>';
   if (!buildsData.length) return '<div class="hint">No active builds.</div>';
-  const nameMap = JSON.parse(localStorage.getItem('bc-items-map') || '{}');
   return '<div class="builds">' + buildsData.map(p => {
     const req = p.actionsRequired || 0;
     const prog = p.progress || 0;
     const done = req > 0 && prog >= req;
     const pct = req ? Math.min(100, Math.floor(prog / req * 100)) : 0;
     const mats = [...(p.items || []), ...(p.cargos || [])].map(m => {
-      const name = nameMap[m.item_id] || `#${m.item_id}`;
+      const name = itemsMap[m.item_id] || `#${m.item_id}`;
       return `<span class="need"><span>${esc(name)}</span><b>${fmt(m.quantity)}</b></span>`;
     }).join('');
     return `<div class="card">
@@ -896,7 +890,7 @@ function renderJobs() {
 }
 
 function renderTasks() {
-  const name = localStorage.getItem('bc-tasks-player') || '';
+  const name = localStorage.getItem(LS.tasksPlayer) || '';
   const setRow = `<div class="tk-setrow">
     <input class="inp tk-inp" id="tk-inp" placeholder="Your player name…" value="${esc(name)}" autocomplete="off">
     <button class="tk-setbtn" id="tk-setbtn">Set</button>
@@ -911,8 +905,7 @@ function renderTasks() {
   let expStr = '';
   if (td.expiration) {
     const ms = td.expiration * 1000 - Date.now();
-    if (ms <= 0) expStr = 'expired';
-    else { const h = Math.floor(ms / 3600000), d = Math.floor(h / 24); expStr = d > 0 ? `${d}d ${h%24}h` : `${h}h`; }
+    expStr = ms <= 0 ? 'expired' : fmtCountdown(ms);
   }
   const head = `<div class="tk-head"><b>${done}</b>/${td.tasks.length} done${expStr ? ` · resets in ${expStr}` : ''}</div>`;
   const taskCard = t => {
@@ -963,7 +956,7 @@ function renderMembers() {
 }
 
 function renderSettings() {
-  const playerName = localStorage.getItem('bc-tasks-player') || '';
+  const playerName = localStorage.getItem(LS.tasksPlayer) || '';
   const sett = getSettlement();
   return `<div class="settings-page">
     <div class="settings-section">
@@ -983,15 +976,15 @@ function renderSettings() {
     </div>
     <div class="settings-section">
       <div class="settings-label">Notifications</div>
-      <label class="settings-check"><input type="checkbox" id="cfg-buff-notify" ${localStorage.getItem('bc-buff-notify') === '0' ? '' : 'checked'}> Notify before buffs expire</label>
+      <label class="settings-check"><input type="checkbox" id="cfg-buff-notify" ${localStorage.getItem(LS.buffNotify) === '0' ? '' : 'checked'}> Notify before buffs expire</label>
       <div class="settings-row">
         <span class="settings-value">Lead time (s)</span>
-        <input class="inp settings-inp settings-num" id="cfg-buff-lead" type="number" min="5" value="${esc(localStorage.getItem('bc-buff-notify-lead') || '60')}">
+        <input class="inp settings-inp settings-num" id="cfg-buff-lead" type="number" min="5" value="${esc(localStorage.getItem(LS.buffNotifyLead) || '60')}">
       </div>
-      <label class="settings-check"><input type="checkbox" id="cfg-craft-notify" ${localStorage.getItem('bc-craft-notify') === '0' ? '' : 'checked'}> Notify on craft stall</label>
+      <label class="settings-check"><input type="checkbox" id="cfg-craft-notify" ${localStorage.getItem(LS.craftNotify) === '0' ? '' : 'checked'}> Notify on craft stall</label>
       <div class="settings-row">
         <span class="settings-value">Stall threshold (s)</span>
-        <input class="inp settings-inp settings-num" id="cfg-craft-stall" type="number" min="1" value="${esc(localStorage.getItem('bc-craft-stall-sec') || '3')}">
+        <input class="inp settings-inp settings-num" id="cfg-craft-stall" type="number" min="1" value="${esc(localStorage.getItem(LS.craftStallSec) || '5')}">
       </div>
       <button class="settings-save" id="cfg-test-notify" style="margin-top:6px">Test notification</button>
     </div>
@@ -1018,12 +1011,12 @@ function bindTabEvents(id) {
     const apply = () => {
       const v = inp.value.trim();
       if (!v) {
-        localStorage.removeItem('bc-tasks-player');
-        localStorage.removeItem('bc-tasks-player-id');
+        localStorage.removeItem(LS.tasksPlayer);
+        localStorage.removeItem(LS.tasksPlayerId);
         tasksData = null;
       } else {
-        localStorage.setItem('bc-tasks-player', v);
-        localStorage.removeItem('bc-tasks-player-id'); // force re-lookup
+        localStorage.setItem(LS.tasksPlayer, v);
+        localStorage.removeItem(LS.tasksPlayerId); // force re-lookup
         tasksData = 'loading';
       }
       renderTab('tasks');
@@ -1039,11 +1032,11 @@ function bindTabEvents(id) {
     const apply = () => {
       const v = inp.value.trim();
       if (!v) {
-        localStorage.removeItem('bc-tasks-player');
-        localStorage.removeItem('bc-tasks-player-id');
+        localStorage.removeItem(LS.tasksPlayer);
+        localStorage.removeItem(LS.tasksPlayerId);
       } else {
-        localStorage.setItem('bc-tasks-player', v);
-        localStorage.removeItem('bc-tasks-player-id');
+        localStorage.setItem(LS.tasksPlayer, v);
+        localStorage.removeItem(LS.tasksPlayerId);
       }
       tasksData = null;
       saveBtn.textContent = 'Saved!';
@@ -1052,18 +1045,18 @@ function bindTabEvents(id) {
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
     if (saveBtn) saveBtn.addEventListener('click', apply);
     const buffChk = document.getElementById('cfg-buff-notify');
-    if (buffChk) buffChk.addEventListener('change', () => localStorage.setItem('bc-buff-notify', buffChk.checked ? '1' : '0'));
+    if (buffChk) buffChk.addEventListener('change', () => localStorage.setItem(LS.buffNotify, buffChk.checked ? '1' : '0'));
     const buffLead = document.getElementById('cfg-buff-lead');
     if (buffLead) {
       buffLead.addEventListener('mousedown', e => e.stopPropagation());
-      buffLead.addEventListener('change', () => localStorage.setItem('bc-buff-notify-lead', String(Math.max(5, parseInt(buffLead.value) || 60))));
+      buffLead.addEventListener('change', () => localStorage.setItem(LS.buffNotifyLead, String(Math.max(5, parseInt(buffLead.value) || 60))));
     }
     const craftChk = document.getElementById('cfg-craft-notify');
-    if (craftChk) craftChk.addEventListener('change', () => localStorage.setItem('bc-craft-notify', craftChk.checked ? '1' : '0'));
+    if (craftChk) craftChk.addEventListener('change', () => localStorage.setItem(LS.craftNotify, craftChk.checked ? '1' : '0'));
     const craftStall = document.getElementById('cfg-craft-stall');
     if (craftStall) {
       craftStall.addEventListener('mousedown', e => e.stopPropagation());
-      craftStall.addEventListener('change', () => localStorage.setItem('bc-craft-stall-sec', String(Math.max(1, parseInt(craftStall.value) || 3))));
+      craftStall.addEventListener('change', () => localStorage.setItem(LS.craftStallSec, String(Math.max(1, parseInt(craftStall.value) || 5))));
     }
     const testBtn = document.getElementById('cfg-test-notify');
     if (testBtn) testBtn.addEventListener('click', () => notify('BitCraft Overlay', 'Notifications are working'));
@@ -1101,7 +1094,7 @@ function bindGoalEvents() {
       if (!craftGoals[id]) craftGoals[id] = 1;
       window._planSearch = '';
       _planSearchResults = null;
-      localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
+      localStorage.setItem(LS.goals, JSON.stringify(craftGoals));
       // Show loading, fetch full recipe tree, then reveal the requirements.
       window._planLoading = true;
       renderTab('storage');
@@ -1116,14 +1109,14 @@ function bindGoalEvents() {
       const id = e.target.dataset.id;
       const val = parseInt(e.target.value) || 1;
       craftGoals[id] = Math.max(1, val);
-      localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
+      localStorage.setItem(LS.goals, JSON.stringify(craftGoals));
       renderTab('storage');
     });
   });
   document.querySelectorAll('.plan-remove').forEach(btn => {
     btn.addEventListener('click', () => {
       delete craftGoals[btn.dataset.id];
-      localStorage.setItem('bc-goals', JSON.stringify(craftGoals));
+      localStorage.setItem(LS.goals, JSON.stringify(craftGoals));
       renderTab('storage');
     });
   });
@@ -1132,7 +1125,7 @@ function bindGoalEvents() {
     craftGoals = {};
     window._planSearch = '';
     _planSearchResults = null;
-    localStorage.removeItem('bc-goals');
+    localStorage.removeItem(LS.goals);
     renderTab('storage');
   });
   // Load recipe trees for any goals not yet cached (guarded against re-entry).
@@ -1174,7 +1167,7 @@ function startMain() {
     _pollIfStale('claim', BG_STALE_MS);
   }, 5000);
   setInterval(tickBuffs, 1000);          // live buff countdown
-  setInterval(pollCraftStall, 2000);     // background craft-stall detector (2s for sub-3s detection)
+  setInterval(pollCraftStall, 2000);     // background craft-stall detector (polls every 2s; alerts after the stall threshold)
 }
 
 // Settlement search
@@ -1249,7 +1242,7 @@ if (win) {
       try {
         const pos = await win.outerPosition();
         const sf = await win.scaleFactor();
-        localStorage.setItem('bc-pos-main', JSON.stringify({ x: Math.round(pos.x / sf), y: Math.round(pos.y / sf) }));
+        localStorage.setItem(LS.posMain, JSON.stringify({ x: Math.round(pos.x / sf), y: Math.round(pos.y / sf) }));
       } catch {}
     }, 400);
   });
@@ -1261,16 +1254,19 @@ document.getElementById('collapse-btn').addEventListener('click', async () => {
   const col = document.getElementById('main-collapsible');
   const isCollapsed = btn.textContent.trim() === '▼';
   if (isCollapsed) {
-    const h = parseInt(localStorage.getItem('bc-h-main') || '500');
-    await T?.core?.invoke('set_window_size', { width: 360, height: h });
+    const h = parseInt(localStorage.getItem(LS.hMain) || '500');
+    const w = parseInt(localStorage.getItem(LS.wMain) || '360');
+    await T?.core?.invoke('set_window_size', { width: w, height: h });
     btn.textContent = '▲';
     col.style.display = '';
   } else {
     if (!win) { btn.textContent = '▼'; col.style.display = 'none'; return; }
     const sz = await win.innerSize();
     const sf = await win.scaleFactor();
-    localStorage.setItem('bc-h-main', Math.round(sz.height / sf));
-    await T?.core?.invoke('set_window_size', { width: 360, height: 34 });
+    const w = Math.round(sz.width / sf);
+    localStorage.setItem(LS.hMain, Math.round(sz.height / sf));
+    localStorage.setItem(LS.wMain, w); // keep the user's width when collapsing
+    await T?.core?.invoke('set_window_size', { width: w, height: 34 });
     btn.textContent = '▼';
     col.style.display = 'none';
   }

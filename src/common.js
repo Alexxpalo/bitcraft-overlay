@@ -1,8 +1,27 @@
 // Shared helpers for all overlay windows.
 const T = window.__TAURI__;
 
-// Rate-limited request queue: ~30 req/min (one per 250 ms).
-// Duplicate paths collapse into a single queued request.
+// Centralized localStorage keys — avoids typos that would silently lose data.
+const LS = {
+  settlement:     'bc-settlement',
+  dismissedUpdate:'bc-dismissed-update',
+  activeTab:      'bc-active-tab',
+  goals:          'bc-goals',
+  iconsMap:       'bc-icons-map',
+  itemsMap:       'bc-items-map',
+  tasksPlayer:    'bc-tasks-player',
+  tasksPlayerId:  'bc-tasks-player-id',
+  buffNotify:     'bc-buff-notify',
+  buffNotifyLead: 'bc-buff-notify-lead',
+  craftNotify:    'bc-craft-notify',
+  craftStallSec:  'bc-craft-stall-sec',
+  posMain:        'bc-pos-main',
+  hMain:          'bc-h-main',
+  wMain:          'bc-w-main',
+};
+
+// Request queue: at most one request per 250 ms (~4 req/s ceiling). Identical
+// paths still in flight collapse into a single queued request (see _reqWaiters).
 const _reqQueue   = [];
 const _reqWaiters = new Map();
 let _reqScheduled = false;
@@ -32,11 +51,17 @@ async function bitwasp(path) {
 }
 
 // Selected settlement, shared across all windows via localStorage.
-function getSettlement() { return JSON.parse(localStorage.getItem('bc-settlement') || 'null'); }
-function setSettlement(s) { localStorage.setItem('bc-settlement', JSON.stringify(s)); }
+function getSettlement() { try { return JSON.parse(localStorage.getItem(LS.settlement) || 'null'); } catch { return null; } }
+function setSettlement(s) { localStorage.setItem(LS.settlement, JSON.stringify(s)); }
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Parse JSON from (possibly corrupt) localStorage without throwing.
+function safeParse(json, fallback) {
+  try { const v = JSON.parse(json ?? 'null'); return v == null ? fallback : v; }
+  catch { return fallback; }
 }
 
 async function checkForUpdate() {
@@ -44,7 +69,7 @@ async function checkForUpdate() {
   try {
     const ver = await T.core.invoke('check_for_update');
     if (!ver) return;
-    if (localStorage.getItem('bc-dismissed-update') === ver) return;
+    if (localStorage.getItem(LS.dismissedUpdate) === ver) return;
     document.getElementById('update-ver').textContent = ver;
     document.getElementById('update-banner').style.display = 'flex';
   } catch(e) {}
@@ -61,10 +86,44 @@ async function doInstallUpdate() {
   }
 }
 
+// Short notification sound. Uses the bundled WAV; if it can't load/play
+// (e.g. autoplay policy), falls back to a synthesized Web Audio chime.
+let _notifyAudio = null;
+function playNotifySound() {
+  try {
+    if (!_notifyAudio) { _notifyAudio = new Audio('notify.wav'); _notifyAudio.volume = 0.6; }
+    _notifyAudio.currentTime = 0;
+    const p = _notifyAudio.play();
+    if (p && p.catch) p.catch(() => beepNotify());
+  } catch(e) { beepNotify(); }
+}
+
+// Fallback two-tone chime via Web Audio, in case the WAV element can't play.
+function beepNotify() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const tone = (freq, start, dur) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + start); osc.stop(ctx.currentTime + start + dur);
+    };
+    tone(880, 0, 0.14); tone(1318.51, 0.1, 0.22);
+    setTimeout(() => ctx.close(), 500);
+  } catch(e) {}
+}
+
 // Desktop notification via the notification plugin (global Tauri API).
 // Requests permission on first use; silently no-ops if unavailable/denied.
+// Always plays a sound so the alert is noticed even with the overlay hidden.
 let _notifyPerm = null; // null=unknown, true/false once resolved
 async function notify(title, body) {
+  playNotifySound();
   const n = T?.notification;
   if (!n) return;
   try {
@@ -88,14 +147,18 @@ async function primeNotify() {
 
 function dismissUpdate() {
   const ver = document.getElementById('update-ver')?.textContent;
-  if (ver) localStorage.setItem('bc-dismissed-update', ver);
+  if (ver) localStorage.setItem(LS.dismissedUpdate, ver);
   const banner = document.getElementById('update-banner');
   if (banner) banner.style.display = 'none';
 }
 
 function relTime(ts) {
   if (!ts) return '';
-  const then = new Date(String(ts).replace(' ', 'T')).getTime();
+  // API timestamps look like "2026-06-01 17:30:36+00". The bare "+00"/"+0000"
+  // offset isn't valid ISO 8601, so Date() rejects it — normalize to "+00:00".
+  let str = String(ts).trim().replace(' ', 'T')
+    .replace(/(T\d{2}:\d{2}(?::\d{2})?)([+-]\d{2})(\d{2})?$/, (m, t, h, mm) => `${t}${h}:${mm || '00'}`);
+  const then = new Date(str).getTime();
   if (isNaN(then)) return ts;
   const s = Math.floor((Date.now() - then) / 1000);
   if (s < 60) return 'just now';
