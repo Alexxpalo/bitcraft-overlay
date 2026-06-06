@@ -90,14 +90,24 @@ async function checkForUpdate() {
 
 async function doInstallUpdate() {
   if (!T?.core) return;
-  document.getElementById('update-banner').innerHTML = '<span>Downloading update…</span>';
+  const banner = document.getElementById('update-banner');
+  banner.innerHTML = '<span>Downloading update…</span>';
+  // Rust emits this once the download finishes and the (possibly privileged)
+  // install begins — on Linux .deb/.rpm this is when a password prompt appears.
+  let unlisten;
+  try {
+    unlisten = await T?.event?.listen?.('update-installing', () => {
+      banner.innerHTML = '<span>Installing… confirm any password prompt</span>';
+    });
+  } catch(e) {}
   try {
     await T.core.invoke('install_update');
   } catch(e) {
-    const banner = document.getElementById('update-banner');
     banner.innerHTML = `<span>Error: ${esc(String(e))}</span><button id="update-err-dismiss">✕</button>`;
     // No inline onclick — blocked under CSP; bind explicitly.
     document.getElementById('update-err-dismiss')?.addEventListener('click', dismissUpdate);
+  } finally {
+    if (typeof unlisten === 'function') unlisten();
   }
 }
 

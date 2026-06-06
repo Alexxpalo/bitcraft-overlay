@@ -109,15 +109,38 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<UpdateCheck, String> 
 }
 
 #[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+async fn install_update(app: tauri::AppHandle, window: tauri::Window) -> Result<(), String> {
+    use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
-    if let Some(u) = app.updater().map_err(|e| e.to_string())?
-        .check().await.map_err(|e| e.to_string())?
-    {
-        u.download_and_install(|_, _| {}, || {})
-            .await.map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    let Some(u) = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(());
+    };
+
+    // The overlay is always-on-top; on Linux a .deb/.rpm update runs
+    // `pkexec dpkg`/`rpm` which pops a polkit/sudo password dialog. That dialog
+    // would sit *behind* the always-on-top overlay and look like the install
+    // hung at "Downloading…". Drop always-on-top for the duration so the prompt
+    // is reachable, and emit an event when we move from downloading to
+    // installing so the UI can tell the user to confirm the prompt.
+    let _ = window.set_always_on_top(false);
+    let app_for_cb = app.clone();
+    let result = u
+        .download_and_install(
+            |_chunk, _total| {},
+            move || {
+                let _ = app_for_cb.emit("update-installing", ());
+            },
+        )
+        .await
+        .map_err(|e| e.to_string());
+    let _ = window.set_always_on_top(true);
+    result
 }
 
 /// Bundle identifier — must match `identifier` in tauri.conf.json.
