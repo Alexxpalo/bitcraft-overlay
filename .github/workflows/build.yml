@@ -69,39 +69,59 @@ jobs:
           REPO="${{ github.repository }}"
           mkdir -p /tmp/sigs
 
-          # Tauri 2.0 (createUpdaterArtifacts) signs the installers directly:
-          # Linux -> *.AppImage(.sig), Windows NSIS -> *-setup.exe(.sig)
+          # Tauri 2.0 (createUpdaterArtifacts) signs the installers directly.
+          # The updater resolves the download per install type: it looks up
+          # "{os}-{arch}-{installer}" first and falls back to "{os}-{arch}".
+          # So a .deb install MUST be offered the .deb (not the AppImage) or it
+          # fails with "invalid updater binary format". We therefore publish a
+          # key per Linux package format, plus the AppImage as the generic
+          # linux-x86_64 fallback, and the NSIS zip for Windows.
           gh release download "$TAG" --repo "$REPO" \
             --pattern "*.AppImage.tar.gz.sig" \
+            --pattern "*_amd64.deb.sig" \
+            --pattern "*.x86_64.rpm.sig" \
             --pattern "*-setup.nsis.zip.sig" \
             --dir /tmp/sigs 2>/dev/null || true
 
-          LINUX_SIG_FILE=$(ls /tmp/sigs/*.AppImage.tar.gz.sig 2>/dev/null | head -1)
+          APPIMAGE_SIG_FILE=$(ls /tmp/sigs/*.AppImage.tar.gz.sig 2>/dev/null | head -1)
+          DEB_SIG_FILE=$(ls /tmp/sigs/*_amd64.deb.sig 2>/dev/null | head -1)
+          RPM_SIG_FILE=$(ls /tmp/sigs/*.x86_64.rpm.sig 2>/dev/null | head -1)
           WIN_SIG_FILE=$(ls /tmp/sigs/*-setup.nsis.zip.sig 2>/dev/null | head -1)
 
-          LINUX_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
+          APPIMAGE_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
             -q '.assets[] | select(.name | endswith(".AppImage.tar.gz")) | .url' | head -1)
+          DEB_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
+            -q '.assets[] | select(.name | endswith(".deb")) | .url' | head -1)
+          RPM_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
+            -q '.assets[] | select(.name | endswith(".rpm")) | .url' | head -1)
           WIN_URL=$(gh release view "$TAG" --repo "$REPO" --json assets \
             -q '.assets[] | select(.name | endswith("-setup.nsis.zip")) | .url' | head -1)
 
-          echo "Linux  sig: $LINUX_SIG_FILE  url: $LINUX_URL"
-          echo "Windows sig: $WIN_SIG_FILE  url: $WIN_URL"
+          echo "AppImage sig: $APPIMAGE_SIG_FILE  url: $APPIMAGE_URL"
+          echo "Deb      sig: $DEB_SIG_FILE  url: $DEB_URL"
+          echo "Rpm      sig: $RPM_SIG_FILE  url: $RPM_URL"
+          echo "Windows  sig: $WIN_SIG_FILE  url: $WIN_URL"
 
           PLATFORMS="{}"
 
-          if [ -f "$LINUX_SIG_FILE" ] && [ -n "$LINUX_URL" ]; then
-            LINUX_SIG=$(cat "$LINUX_SIG_FILE")
-            PLATFORMS=$(echo "$PLATFORMS" | jq \
-              --arg sig "$LINUX_SIG" --arg url "$LINUX_URL" \
-              '. + {"linux-x86_64": {"signature": $sig, "url": $url}}')
-          fi
+          # add_platform <key> <sig_file> <url>
+          add_platform() {
+            local key="$1" sig_file="$2" url="$3"
+            if [ -f "$sig_file" ] && [ -n "$url" ]; then
+              PLATFORMS=$(echo "$PLATFORMS" | jq \
+                --arg key "$key" --arg sig "$(cat "$sig_file")" --arg url "$url" \
+                '. + {($key): {"signature": $sig, "url": $url}}')
+            else
+              echo "WARN: skipping $key (missing sig or url)" >&2
+            fi
+          }
 
-          if [ -f "$WIN_SIG_FILE" ] && [ -n "$WIN_URL" ]; then
-            WIN_SIG=$(cat "$WIN_SIG_FILE")
-            PLATFORMS=$(echo "$PLATFORMS" | jq \
-              --arg sig "$WIN_SIG" --arg url "$WIN_URL" \
-              '. + {"windows-x86_64": {"signature": $sig, "url": $url}}')
-          fi
+          # Generic linux fallback = AppImage (used by AppImage installs).
+          add_platform "linux-x86_64"     "$APPIMAGE_SIG_FILE" "$APPIMAGE_URL"
+          # Per-installer keys so .deb / .rpm installs self-update correctly.
+          add_platform "linux-x86_64-deb" "$DEB_SIG_FILE"      "$DEB_URL"
+          add_platform "linux-x86_64-rpm" "$RPM_SIG_FILE"      "$RPM_URL"
+          add_platform "windows-x86_64"   "$WIN_SIG_FILE"      "$WIN_URL"
 
           if [ "$PLATFORMS" = "{}" ]; then
             echo "ERROR: no updater platforms resolved — auto-update would be broken" >&2

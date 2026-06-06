@@ -85,14 +85,27 @@ fn set_window_size(window: tauri::Window, width: f64, height: f64) -> Result<(),
         .map_err(|e| e.to_string())
 }
 
+/// Result of an update check. `available` is `Some` only when the updater
+/// considers the remote version strictly newer than `current` (the version the
+/// updater itself runs as — `package_info().version`, the same value the
+/// comparison uses). Returning `current` too lets the UI double-guard so it can
+/// never show an empty or same-version "update available" banner.
+#[derive(serde::Serialize)]
+struct UpdateCheck {
+    current: String,
+    available: Option<String>,
+}
+
 #[tauri::command]
-async fn check_for_update(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn check_for_update(app: tauri::AppHandle) -> Result<UpdateCheck, String> {
     use tauri_plugin_updater::UpdaterExt;
-    match app.updater().map_err(|e| e.to_string())?.check().await {
-        Ok(Some(u)) => Ok(Some(u.version.to_string())),
-        Ok(None)    => Ok(None),
-        Err(e)      => Err(e.to_string()),
-    }
+    let current = app.package_info().version.to_string();
+    let available = match app.updater().map_err(|e| e.to_string())?.check().await {
+        Ok(Some(u)) => Some(u.version.to_string()),
+        Ok(None)    => None,
+        Err(e)      => return Err(e.to_string()),
+    };
+    Ok(UpdateCheck { current, available })
 }
 
 #[tauri::command]

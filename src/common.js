@@ -76,8 +76,12 @@ function safeParse(json, fallback) {
 async function checkForUpdate() {
   if (!T?.core) return;
   try {
-    const ver = await T.core.invoke('check_for_update');
-    if (!ver) return;
+    const info = await T.core.invoke('check_for_update');
+    const ver = info?.available;
+    // Guard hard: only nag for a genuinely newer, non-empty version (the Rust
+    // side already enforces this, but double-checking here makes the
+    // "perpetual / blank update banner" class of bug impossible).
+    if (!ver || ver === info.current) return;
     if (localStorage.getItem(LS.dismissedUpdate) === ver) return;
     document.getElementById('update-ver').textContent = ver;
     document.getElementById('update-banner').style.display = 'flex';
