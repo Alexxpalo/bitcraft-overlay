@@ -120,7 +120,40 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Bundle identifier — must match `identifier` in tauri.conf.json.
+#[cfg(windows)]
+const APP_IDENTIFIER: &str = "com.bitcraft.overlay";
+
+/// Windows/WebView2 caches the bundled frontend (HTTP + V8 code cache) keyed by
+/// the stable `tauri.localhost` asset URLs and does NOT invalidate it on app
+/// update — so a new build's embedded JS/HTML can be shadowed by the previous
+/// version's cached copy. That silently broke the updater UI across releases
+/// (old cached common.js running against a new backend). Drop the cache once
+/// whenever the running version differs from the version that last ran, so each
+/// update loads its own frontend. localStorage (user settings) lives in a
+/// sibling dir and is left untouched. Runs before the webview starts, so the
+/// cache files aren't locked yet.
+#[cfg(windows)]
+fn drop_stale_webview_cache() {
+    use std::path::PathBuf;
+    let Ok(local) = std::env::var("LOCALAPPDATA") else { return };
+    let base = PathBuf::from(local).join(APP_IDENTIFIER);
+    let stamp = base.join("frontend_version.txt");
+    let current = env!("CARGO_PKG_VERSION");
+    if std::fs::read_to_string(&stamp).is_ok_and(|v| v.trim() == current) {
+        return; // same version already ran — keep the cache
+    }
+    let cache_root = base.join("EBWebView").join("Default");
+    let _ = std::fs::remove_dir_all(cache_root.join("Cache"));
+    let _ = std::fs::remove_dir_all(cache_root.join("Code Cache"));
+    let _ = std::fs::create_dir_all(&base);
+    let _ = std::fs::write(&stamp, current);
+}
+
 fn main() {
+    #[cfg(windows)]
+    drop_stale_webview_cache();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
