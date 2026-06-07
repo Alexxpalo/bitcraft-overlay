@@ -103,6 +103,24 @@
     .buff-stats { font-size: 9.5px; font-family: var(--mono); color: var(--accent); margin-top: 3px; }
     .settings-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--txt); padding: 3px 0; cursor: pointer; }
     .settings-num { width: 64px !important; flex: none !important; text-align: right; }
+    .chests { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+    .ch-card { padding: 0; overflow: hidden; }
+    .ch-card.ch-done { border-color: color-mix(in oklab, var(--good) 45%, var(--line)); }
+    .ch-card .card-head { padding: 8px 10px 0; margin-bottom: 4px; }
+    .ch-type { font-size: 9.5px; color: var(--dim2); font-family: var(--mono); margin: 0; padding: 0 10px 6px; }
+    .ch-need { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+    .ch-need.here { color: var(--good); }
+    .ch-need.elsewhere { color: #e0b24a; }
+    .ch-need.missing { color: var(--bad); }
+    .ch-st { font-size: 10px; font-weight: 700; flex-shrink: 0; }
+    .ch-st.here { color: var(--good); }
+    .ch-st.elsewhere { color: #e0b24a; }
+    .ch-st.missing { color: var(--bad); }
+    .ch-mult { font-family: var(--mono); font-size: 10px; color: var(--craft); font-weight: 700; }
+    .ch-chip { font-size: 9px; font-family: var(--mono); margin-right: 5px; }
+    .ch-chip.elsewhere { color: #e0b24a; }
+    .ch-chip.missing { color: var(--bad); }
+    .ch-note { font-size: 10.5px; color: var(--dim2); padding: 4px 2px 1px; }
   </style>
 </head>
 <body>
@@ -145,6 +163,7 @@
     <div class="collapsible" id="main-collapsible">
       <div class="tabs" id="tabs">
         <button class="tab on" data-tab="storage">Storage</button>
+        <button class="tab" data-tab="chests">Chests</button>
         <button class="tab" data-tab="builds">Builds</button>
         <button class="tab" data-tab="jobs">Jobs</button>
         <button class="tab" data-tab="tasks">Tasks</button>

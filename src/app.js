@@ -3,6 +3,7 @@ let settlement = getSettlement();
 let activeTab = localStorage.getItem(LS.activeTab) || 'storage';
 let storageMode = 'plan'; // 'plan' | 'items'
 let allItems = null;
+let chestsData = null;   // [{ entityId, nickname, typeName, icon, contents: Map(String(item_id)->qty) }]
 let _storageSig = null;  // signature of last-rendered storage data (skip no-op re-renders)
 let _planSearchTimer = null;  // debounce timer for the craft-plan item search
 let buildsData = null;
@@ -28,13 +29,13 @@ const activeStale = tab => STALE_OVERRIDE[tab]?.active || ACTIVE_STALE_MS;
 const bgStale     = tab => STALE_OVERRIDE[tab]?.bg     || BG_STALE_MS;
 function _poll(tab) {
   _lastPoll[tab] = Date.now();
-  ({ storage: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks, buffs: pollBuffs, claim: pollClaim })[tab]?.();
+  ({ storage: pollStorage, chests: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks, buffs: pollBuffs, claim: pollClaim })[tab]?.();
 }
 function _pollIfStale(tab, staleMs) {
   if (Date.now() - (_lastPoll[tab] || 0) > staleMs) _poll(tab);
 }
 
-const TAB_ORDER = ['storage', 'builds', 'jobs', 'tasks', 'buffs', 'members', 'settings'];
+const TAB_ORDER = ['storage', 'chests', 'builds', 'jobs', 'tasks', 'buffs', 'members', 'settings'];
 function switchTab(id) {
   if (!TAB_ORDER.includes(id) || id === activeTab) return;
   activeTab = id;
@@ -98,6 +99,91 @@ function _saveName(id, name) {
   if (!name || itemsMap[id]) return;
   itemsMap[id] = name;
   localStorage.setItem(LS.itemsMap, JSON.stringify(capMap(itemsMap, 5000)));
+}
+
+// ─── Chest nickname → item resolution ────────────────────────────────────
+// A chest's player-set nickname (buildingNickname) is treated as an item name.
+// Map it to an item id (+ recipe) so the Chests tab can show what's missing.
+// { [lowercased nickname]: { itemId } | { itemId: null } }  (negative caching)
+let _nicknameCache = null;
+function nicknameCache() { return _nicknameCache ?? (_nicknameCache = JSON.parse(localStorage.getItem(LS.nicknameMap) || '{}')); }
+function saveNickname(key, val) {
+  const c = nicknameCache(); c[key] = val;
+  localStorage.setItem(LS.nicknameMap, JSON.stringify(capMap(c, 2000)));
+}
+
+// "Advanced Codex x3" / "…×3" / "…*3" → { name:"Advanced Codex", mult:3 }. The
+// item is resolved from `name`; `mult` scales the whole recipe tree's needs.
+function parseNickname(raw) {
+  const s = String(raw || '').trim();
+  const m = s.match(/^(.*?)\s*[x×*]\s*(\d+)\s*$/i);
+  if (m && m[1].trim()) return { name: m[1].trim(), mult: Math.max(1, parseInt(m[2], 10) || 1) };
+  return { name: s, mult: 1 };
+}
+
+const _nickInFlight = new Map();
+async function resolveNicknameToItemId(nickname) {
+  const key = parseNickname(nickname).name.toLowerCase();
+  if (!key) return null;
+  const cache = nicknameCache();
+  if (key in cache) return cache[key].itemId;        // cached (incl. negatives)
+  if (_nickInFlight.has(key)) return _nickInFlight.get(key);
+  const p = (async () => {
+    // Fast path: a name we already know — no API call.
+    for (const [id, nm] of Object.entries(itemsMap))
+      if (nm && nm.toLowerCase() === key) { saveNickname(key, { itemId: id }); return id; }
+    // Search the API, accept only an exact (case-insensitive) name match.
+    try {
+      const j = await bitwasp('items?q=' + encodeURIComponent(key));
+      const arr = j.items || j.results || (Array.isArray(j) ? j : []);
+      const hit = arr.find(it => (it.name || it.displayName || '').toLowerCase() === key);
+      if (hit) {
+        const id = String(hit.id ?? hit.entityId ?? hit.item_id);
+        _saveName(id, hit.name || hit.displayName);
+        saveIcon(id, hit.iconAssetName);
+        saveNickname(key, { itemId: id });
+        return id;
+      }
+    } catch(e) {}
+    saveNickname(key, { itemId: null });             // no match — stop retrying
+    return null;
+  })();
+  _nickInFlight.set(key, p);
+  try { return await p; } finally { _nickInFlight.delete(key); }
+}
+
+// Pre-resolve every nicknamed chest (nickname→item→recipe→ingredient names) so
+// the Chests tab never renders a half-resolved card. Mirrors loadGoalTrees().
+let _chestsResolveInFlight = false;
+const _chestTreeLoaded = new Set();   // itemIds whose FULL recipe tree is cached
+async function resolveChestNicknames() {
+  if (_chestsResolveInFlight || !chestsData) return;
+  const named = chestsData.filter(c => c.nickname);
+  if (!named.length) { window._chestsLoading = false; return; }
+  const nc = nicknameCache();
+  const allCached = named.every(c => {
+    const k = parseNickname(c.nickname).name.toLowerCase();
+    if (!(k in nc)) return false;
+    const id = nc[k].itemId;
+    return !id || _chestTreeLoaded.has(id);
+  });
+  if (allCached) { window._chestsLoading = false; return; } // nothing to resolve — avoids a renderTab→bindTabEvents→resolve loop
+  _chestsResolveInFlight = true;
+  window._chestsLoading = true;
+  if (activeTab === 'chests') renderTab('chests');
+  try {
+    const visited = new Set();
+    await Promise.all(named.map(async c => {
+      const id = await resolveNicknameToItemId(c.nickname);
+      if (!id) return;
+      await ensureGoalTree(id, 0, visited);   // fetch the WHOLE recipe tree (names, icons, sub-recipes)
+      _chestTreeLoaded.add(id);
+    }));
+  } finally {
+    _chestsResolveInFlight = false;
+    window._chestsLoading = false;
+    if (activeTab === 'chests') renderTab('chests');
+  }
 }
 
 const _recipeInFlight = new Map();
@@ -178,12 +264,25 @@ async function pollStorage() {
       saveIcon(it.id, it.iconAssetName);
     }
     const totals = {};
+    const chests = [];
     for (const b of (j.buildings || [])) {
+      const contents = new Map();
       for (const slot of (b.inventory || [])) {
         const c = slot.contents;
-        if (c?.item_id) totals[c.item_id] = (totals[c.item_id] || 0) + (c.quantity || 0);
+        if (!c?.item_id) continue;
+        const cid = String(c.item_id);
+        totals[c.item_id] = (totals[c.item_id] || 0) + (c.quantity || 0);
+        contents.set(cid, (contents.get(cid) || 0) + (c.quantity || 0));
       }
+      chests.push({
+        entityId: String(b.entityId),
+        nickname: (b.buildingNickname || '').trim() || null,
+        typeName: b.buildingName || 'Chest',
+        icon: b.iconAssetName || '',
+        contents,
+      });
     }
+    chestsData = chests;
     const ids = Object.keys(totals);
     // Merge (don't wipe) so names learned from jobs/recipes/tasks survive.
     for (const [id, m] of Object.entries(im)) itemsMap[id] = m.name;
@@ -195,11 +294,14 @@ async function pollStorage() {
     });
     // Skip re-render when nothing changed, so idle 5s polls don't rebuild the
     // list (which would reset scroll position and the search input cursor).
-    const sig = allItems.map(i => `${i.id}:${i.qty}`).sort().join('|');
+    const chestSig = chests.map(c => c.entityId + '~' + (c.nickname || '') + '~' +
+      [...c.contents].map(([i, q]) => i + ':' + q).sort().join(',')).sort().join('|');
+    const sig = allItems.map(i => `${i.id}:${i.qty}`).sort().join('|') + '#' + chestSig;
     if (sig === _storageSig) return;
     _storageSig = sig;
   } catch(e) { console.error('storage poll:', e); }
-  if (activeTab === 'storage') renderTab('storage');
+  resolveChestNicknames();
+  if (activeTab === 'storage' || activeTab === 'chests') renderTab(activeTab);
 }
 
 async function pollBuilds() {
@@ -474,6 +576,7 @@ function setTabContent(html) {
 function renderTab(id) {
   const html = {
     storage:  renderStorage,
+    chests:   renderChests,
     builds:   renderBuilds,
     jobs:     renderJobs,
     tasks:    renderTasks,
@@ -597,12 +700,25 @@ function renderPlanEditor() {
   </div>`;
 }
 
-function computeNeeds() {
-  if (!Object.keys(craftGoals).length) return { needs: {}, satisfied: {} };
+// Depth of an item in its recipe tree (0 = base material). Caller passes a fresh
+// memo so a partially-loaded tree in one render never poisons another.
+function recipeDepth(id, cache, memo, seen = new Set()) {
+  if (id in memo) return memo[id];
+  if (seen.has(id)) return 0;
+  seen.add(id);
+  const r = cache[id];
+  if (!r?.ingredients?.length) return (memo[id] = 0);
+  const d = Math.max(...r.ingredients.map(ing => recipeDepth(ing.id, cache, memo, new Set(seen)))) + 1;
+  return (memo[id] = d);
+}
+
+// Walk the recipe tree(s) of `goals` (id→target qty) against `invById` (id→qty on
+// hand) and return gross needs + items covered because an ancestor product is in stock.
+function computeNeeds(goals, invById) {
+  if (!goals || !Object.keys(goals).length) return { needs: {}, satisfied: {} };
   const cache = recipeCache();
-  const invById = Object.fromEntries((allItems || []).map(i => [i.id, i.qty]));
   const nameById = Object.fromEntries((allItems || []).map(i => [i.id, i.name]));
-  const nameOf = id => nameById[id] || itemsMap[id] || cache[id]?.name || `Item ${id.slice(-6)}`;
+  const nameOf = id => nameById[id] || itemsMap[id] || cache[id]?.name || `Item ${String(id).slice(-6)}`;
   const needs = {};       // id → gross amount you still need to obtain/craft
   const satisfied = {};   // id → { qty, by } : not needed because an ancestor product is in stock
 
@@ -637,13 +753,14 @@ function computeNeeds() {
       cascade(ing.id, ing.qty * batches, null, new Set(visited));
   }
 
-  for (const [id, qty] of Object.entries(craftGoals)) if (qty > 0) cascade(id, qty, null, new Set());
+  for (const [id, qty] of Object.entries(goals)) if (qty > 0) cascade(id, qty, null, new Set());
   for (const id of Object.keys(needs)) delete satisfied[id]; // genuinely-needed wins over satisfied
   return { needs, satisfied };
 }
 
 function renderByStage() {
-  const { needs, satisfied } = computeNeeds();
+  const invByQty = Object.fromEntries((allItems || []).map(i => [i.id, i.qty]));
+  const { needs, satisfied } = computeNeeds(craftGoals, invByQty);
   const ids = [...new Set([...Object.keys(needs), ...Object.keys(satisfied)])];
   if (!ids.length) return '';
   const cache = recipeCache();
@@ -652,15 +769,6 @@ function renderByStage() {
 
   // Compute depth (0 = base material) from recipe tree
   const depthMemo = {};
-  function depth(id, seen = new Set()) {
-    if (id in depthMemo) return depthMemo[id];
-    if (seen.has(id)) return 0;
-    seen.add(id);
-    const r = cache[id];
-    if (!r?.ingredients?.length) return (depthMemo[id] = 0);
-    const d = Math.max(...r.ingredients.map(ing => depth(ing.id, new Set(seen)))) + 1;
-    return (depthMemo[id] = d);
-  }
 
   const byStage = {};
   for (const id of ids) {
@@ -669,7 +777,7 @@ function renderByStage() {
     const name = inv?.name || itemsMap[id] || r?.name || `Item ${id.slice(-6)}`;
     const tag  = inv?.tag  || r?.tag  || 'Other';
     const qty  = inv?.qty  ?? 0;
-    const s = depth(id);
+    const s = recipeDepth(id, cache, depthMemo);
     ((byStage[s] ??= {})[tag] ??= []).push({ id, name, qty });
   }
   if (!Object.keys(byStage).length) return '';
@@ -714,26 +822,132 @@ function renderByStage() {
   return html;
 }
 
+// ─── Chests tab ───────────────────────────────────────────────────────────
+// A chest named (in-game) after a craftable item shows that item's FULL recipe
+// tree broken down by production stage (like the craft plan), with a per-item
+// status: 🟢 enough in THIS chest · 🟡 not here but in the settlement (move it) ·
+// 🔴 missing everywhere. Chests whose nickname isn't a craftable item are hidden.
+function renderChests() {
+  if (chestsData === null) return '<div class="hint">Loading chests…</div>';
+  const named = chestsData.filter(c => c.nickname);
+  if (!named.length) return '<div class="hint">No nicknamed chests. Name a chest after an item (e.g. "Rough Plank") in-game to track craft readiness.</div>';
+  if (window._chestsLoading) return '<div class="hint">Resolving recipes…</div>';
+
+  const rc = recipeCache(), nc = nicknameCache(), icons = iconMap();
+  const craftable = named.filter(c => {
+    const id = nc[parseNickname(c.nickname).name.toLowerCase()]?.itemId;
+    const r = id ? rc[id] : null;
+    return r && r.ingredients?.length;
+  });
+  if (!craftable.length) return '<div class="hint">No chests named after a craftable item.</div>';
+
+  const settle = Object.fromEntries((allItems || []).map(i => [String(i.id), i.qty]));
+  return '<div class="chests">' + craftable.map(chest => {
+    const { name, mult } = parseNickname(chest.nickname);
+    const itemId = nc[name.toLowerCase()].itemId;
+    return renderChestCard(chest, itemId, rc[itemId], settle, icons, rc, mult);
+  }).join('') + '</div>';
+}
+
+function renderChestCard(chest, itemId, recipe, settle, icons, cache, mult = 1) {
+  const chestInv = Object.fromEntries([...chest.contents]); // String(id) → qty in THIS chest
+  // Expand the full tree against what's in THIS chest, so anything already staged
+  // here prunes its sub-ingredients and everything else is shown to base materials.
+  // `mult` (a "x N" suffix on the nickname) scales the whole tree's needs.
+  const { needs, satisfied } = computeNeeds({ [String(itemId)]: mult }, chestInv);
+  delete needs[String(itemId)]; delete satisfied[String(itemId)]; // the target is the card title
+  const ids = [...new Set([...Object.keys(needs), ...Object.keys(satisfied)])];
+
+  const memo = {}, byStage = {};
+  for (const id of ids) {
+    const r = cache[id];
+    const name = itemsMap[id] || r?.name || `Item ${String(id).slice(-6)}`;
+    const tag  = r?.tag || 'Other';
+    const s = recipeDepth(id, cache, memo);
+    ((byStage[s] ??= {})[tag] ??= []).push({ id, name });
+  }
+
+  let anyMissing = false, anyElsewhere = false, body = '';
+  const maxStage = ids.length ? Math.max(...Object.keys(byStage).map(Number)) : 0;
+  for (let s = 0; s <= maxStage; s++) {
+    if (!byStage[s]) continue;
+    const groups = byStage[s];
+    const total = Object.values(groups).reduce((n, g) => n + g.length, 0);
+    const label = s === 0 ? 'Base Materials' : `Production Stage ${s}`;
+    let inner = '';
+    for (const [tag, items] of Object.entries(groups).sort()) {
+      items.sort((a, b) => (satisfied[a.id] ? 1 : 0) - (satisfied[b.id] ? 1 : 0));
+      let rows = '';
+      for (const item of items) {
+        const id = item.id;
+        let right;
+        if (needs[id] != null) {
+          const need = needs[id] || 0;
+          const inChest = chestInv[id] || 0, inSettle = settle[id] || 0;
+          let state, chip = '';
+          if (inChest >= need) state = 'here';
+          else if (inSettle >= need) { state = 'elsewhere'; anyElsewhere = true; chip = `<span class="ch-chip elsewhere">in storage ${fmt(inSettle)}</span>`; }
+          else { state = 'missing'; anyMissing = true; chip = `<span class="ch-chip missing">missing ${fmt(need - inSettle)}</span>`; }
+          right = `${chip}<span class="ch-need ${state}">${fmt(inChest)}/${fmt(need)}</span>`;
+        } else {
+          const sat = satisfied[id];
+          right = `<span class="cp-need sat" title="Covered — chest already has enough ${esc(sat.by)}">✓ ${fmt(chestInv[id] || 0)}/${fmt(sat.qty)}</span>`;
+        }
+        rows += `<div class="cp-row">
+          ${iconImg(icons[id], 'item-icon cp-icon')}
+          <span class="cp-name" title="${esc(item.name)}">${esc(item.name)}</span>
+          <span class="cp-right">${right}</span>
+        </div>`;
+      }
+      inner += `<div class="cp-group"><div class="cp-gtag">${esc(tag)}<span class="cp-gbadge">${items.length}</span></div>${rows}</div>`;
+    }
+    body += `<div class="cp-stage"><div class="cp-shd"><span>${esc(label)}</span><span class="cp-sbadge">${total} total</span></div>${inner}</div>`;
+  }
+
+  const status = anyMissing ? '<span class="ch-st missing">Missing materials</span>'
+    : anyElsewhere ? '<span class="ch-st elsewhere">Move materials here</span>'
+    : '<span class="ch-st here">Ready to craft ✓</span>';
+  const done = !anyMissing && !anyElsewhere ? ' ch-done' : '';
+  const title = recipe.name || itemsMap[itemId] || parseNickname(chest.nickname).name;
+  const multBadge = mult > 1 ? ` <span class="ch-mult">×${mult}</span>` : '';
+  return `<div class="card ch-card${done}">
+    <div class="card-head">
+      ${iconImg(icons[itemId], 'item-icon cp-icon')}
+      <span class="card-title" title="${esc(chest.nickname)}">${esc(title)}${multBadge}</span>
+      ${status}
+    </div>
+    <div class="ch-type">${esc(chest.typeName)}</div>
+    ${body}
+  </div>`;
+}
+
+// Just the filtered/sorted rows — re-rendered on its own while typing so the
+// search input element (and its caret) survive each keystroke.
+function aiListHtml() {
+  const q = (window._aiSearch || '').toLowerCase();
+  const sort = window._aiSort || 'qty';
+  const rows = (allItems || []).filter(r => !q || r.name.toLowerCase().includes(q));
+  rows.sort((a, b) => sort === 'qty' ? b.qty - a.qty : a.name.localeCompare(b.name));
+  if (!rows.length) return '<div class="hint">No items found.</div>';
+  return rows.map(r => `<div class="ai-row">
+    ${iconImg(r.icon)}
+    <span class="ai-name">${esc(r.name)}</span>
+    <span class="ai-qty">${fmt(r.qty)}</span>
+  </div>`).join('');
+}
+
 function renderAllItems() {
   if (!allItems) return '<div class="hint">Loading…</div>';
   const q = (window._aiSearch || '').toLowerCase();
   const sort = window._aiSort || 'qty';
-  let rows = allItems.filter(r => !q || r.name.toLowerCase().includes(q));
-  rows.sort((a, b) => sort === 'qty' ? b.qty - a.qty : a.name.localeCompare(b.name));
   const ctrl = `<div class="ai-ctrl">
-    <input class="inp" id="ai-search" placeholder="Search items…" value="${esc(q)}">
+    <input class="inp" id="ai-search" dir="ltr" autocomplete="off" placeholder="Search items…" value="${esc(q)}">
     <div class="seg">
       <button class="${sort === 'qty' ? 'on' : ''}" data-sort="qty">Qty</button>
       <button class="${sort === 'name' ? 'on' : ''}" data-sort="name">A–Z</button>
     </div>
   </div>`;
-  if (!rows.length) return ctrl + '<div class="hint">No items found.</div>';
-  return ctrl +
-  rows.map(r => `<div class="ai-row">
-    ${iconImg(r.icon)}
-    <span class="ai-name">${esc(r.name)}</span>
-    <span class="ai-qty">${fmt(r.qty)}</span>
-  </div>`).join('');
+  return ctrl + `<div class="ai-list" id="ai-list">${aiListHtml()}</div>`;
 }
 
 function renderBuilds() {
@@ -898,6 +1112,7 @@ function bindTabEvents(id) {
     if (storageMode === 'plan') bindGoalEvents();
     if (storageMode === 'items') bindAllItemsEvents();
   }
+  if (id === 'chests') resolveChestNicknames();
   if (id === 'tasks') {
     const inp = document.getElementById('tk-inp');
     const btn = document.getElementById('tk-setbtn');
@@ -1032,8 +1247,18 @@ function bindGoalEvents() {
 function bindAllItemsEvents() {
   const inp = document.getElementById('ai-search');
   if (inp) {
-    inp.addEventListener('input', e => { window._aiSearch = e.target.value; renderTab('storage'); });
+    inp.addEventListener('mousedown', e => e.stopPropagation());
+    // Update ONLY the list while typing — re-rendering the whole tab per keystroke
+    // replaced the input mid-type and scrambled the text / jumped the caret.
+    inp.addEventListener('input', e => {
+      window._aiSearch = e.target.value;
+      const list = document.getElementById('ai-list');
+      if (list) list.innerHTML = aiListHtml();
+    });
+    // Restore focus + caret to the end after an external re-render (e.g. a 5s poll).
     inp.focus();
+    const len = inp.value.length;
+    inp.setSelectionRange(len, len);
   }
   document.querySelectorAll('.seg button').forEach(btn => {
     btn.addEventListener('click', () => { window._aiSort = btn.dataset.sort; renderTab('storage'); });
