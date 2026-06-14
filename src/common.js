@@ -19,6 +19,10 @@ const LS = {
   posMain:        'bc-pos-main',
   hMain:          'bc-h-main',
   collapsed:      'bc-collapsed',
+  opacity:        'bc-opacity',
+  scale:          'bc-scale',
+  market:         'bc-market-v1',
+  price:          'bc-price-v1',
 };
 
 // Request queue: at most one request per 250 ms (~4 req/s ceiling). Identical

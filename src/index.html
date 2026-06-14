@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="common.css">
   <style>
     html, body { height: 100%; display: flex; flex-direction: column; }
-    #app { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    #app { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg); opacity: var(--app-opacity, 1); }
     #view-main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     #view-setup { display: flex; flex-direction: column; }
     .collapsible { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -162,16 +162,15 @@
 
     <div class="collapsible" id="main-collapsible">
       <div class="tabs" id="tabs">
-        <button class="tab on" data-tab="storage">Storage</button>
-        <button class="tab" data-tab="chests">Chests</button>
-        <button class="tab" data-tab="builds">Builds</button>
-        <button class="tab" data-tab="jobs">Jobs</button>
-        <button class="tab" data-tab="tasks">Tasks</button>
-        <button class="tab" data-tab="buffs">Buffs</button>
-        <button class="tab" data-tab="members">Members
-          <span class="tab-badge" id="online-badge" style="display:none"></span>
-        </button>
-        <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab on" data-tab="storage" title="Storage"><span class="tab-ico">📦</span><span class="tab-lbl">Storage</span></button>
+        <button class="tab" data-tab="chests" title="Chests"><span class="tab-ico">🧰</span><span class="tab-lbl">Chests</span></button>
+        <button class="tab" data-tab="builds" title="Builds"><span class="tab-ico">🧱</span><span class="tab-lbl">Builds</span><span class="tab-badge" id="builds-badge" style="display:none"></span></button>
+        <button class="tab" data-tab="jobs" title="Jobs"><span class="tab-ico">🔨</span><span class="tab-lbl">Jobs</span><span class="tab-badge" id="jobs-badge" style="display:none"></span></button>
+        <button class="tab" data-tab="tasks" title="Tasks"><span class="tab-ico">📋</span><span class="tab-lbl">Tasks</span><span class="tab-badge" id="tasks-badge" style="display:none"></span></button>
+        <button class="tab" data-tab="buffs" title="Buffs"><span class="tab-ico">✨</span><span class="tab-lbl">Buffs</span><span class="tab-badge" id="buffs-badge" style="display:none"></span></button>
+        <button class="tab" data-tab="skills" title="Skills"><span class="tab-ico">📊</span><span class="tab-lbl">Skills</span></button>
+        <button class="tab" data-tab="members" title="Members"><span class="tab-ico">👥</span><span class="tab-lbl">Members</span><span class="tab-badge" id="online-badge" style="display:none"></span></button>
+        <button class="tab" data-tab="settings" title="Settings"><span class="tab-ico">⚙️</span><span class="tab-lbl">Settings</span></button>
       </div>
 
       <div class="content" id="tab-content"></div>

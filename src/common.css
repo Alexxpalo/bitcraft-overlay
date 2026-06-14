@@ -2,7 +2,7 @@
 html, body { height: 100%; margin: 0; overflow: hidden; }
 body {
   font-family: "Manrope", system-ui, sans-serif;
-  background: oklch(0.17 0.02 255);
+  background: transparent;
   color: oklch(0.93 0.01 255);
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -66,27 +66,34 @@ body {
 
 /* ── tabs ─────────────────────────────────────────────────────────── */
 .tabs {
-  display: flex; gap: 2px; padding: 6px 7px 0; background: var(--bg);
+  display: flex; gap: 2px; padding: 6px 6px 5px; background: var(--bg);
   border-bottom: 1px solid var(--line); flex-shrink: 0;
 }
 .tab {
-  -webkit-appearance: none; flex: 1; position: relative;
-  background: none; border: none; cursor: pointer;
-  font-family: var(--ui); font-size: 11.5px; font-weight: 600;
-  color: var(--dim); padding: 8px 4px 9px; border-radius: 6px 6px 0 0;
+  -webkit-appearance: none; flex: 0 1 auto; min-width: 0; position: relative;
+  background: none; border: none; cursor: pointer; white-space: nowrap;
+  font-family: var(--ui); font-size: 11px; font-weight: 600;
+  color: var(--dim); padding: 6px 7px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center; gap: 5px;
 }
+.tab-ico { font-size: 14px; line-height: 1; filter: grayscale(0.45); }
+.tab-lbl { display: none; }
+.tab.on .tab-lbl { display: inline; }
+.tab.on .tab-ico { filter: none; }
 .tab:hover { color: var(--txt); background: var(--bg2); }
-.tab.on { color: var(--txt); }
-.tab.on::after {
-  content: ""; position: absolute; left: 12%; right: 12%; bottom: -1px; height: 2px;
-  background: var(--accent); border-radius: 2px;
+.tab:hover .tab-ico { filter: none; }
+.tab.on {
+  flex: 1 1 auto; color: var(--txt); background: var(--bg3);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, var(--line));
 }
+.tab.on::after { content: none; }
 .tab-badge {
-  font-family: var(--mono); font-size: 9px; font-weight: 700;
-  background: color-mix(in oklab, var(--good) 22%, transparent);
-  color: var(--good); padding: 0 4px; border-radius: 6px; line-height: 14px;
+  position: absolute; top: 2px; right: 3px; pointer-events: none;
+  font-family: var(--mono); font-size: 8.5px; font-weight: 700;
+  background: color-mix(in oklab, var(--good) 30%, var(--bg));
+  color: var(--good); padding: 0 3px; border-radius: 6px; line-height: 13px;
 }
+.tab-badge.warn { background: color-mix(in oklab, var(--bad) 30%, var(--bg)); color: var(--bad); }
 
 /* ── content ─────────────────────────────────────────────────────── */
 .content { padding: var(--pad); overflow-y: auto; flex: 1; min-height: 0; }
@@ -310,3 +317,51 @@ body {
   font-family: var(--ui); font-weight: 600; cursor: pointer;
 }
 .search-result .res-pick:hover { background: var(--accent); color: #fff; }
+
+/* ── settings sliders ────────────────────────────────────────────── */
+.settings-range { width: 100%; accent-color: var(--accent); cursor: pointer; margin: 2px 0; }
+.settings-num-lbl { font-size: 11px; font-family: var(--mono); color: var(--dim2); flex-shrink: 0; }
+
+/* ── food browser (buffs sub-mode) ───────────────────────────────── */
+.food-wrap { display: flex; flex-direction: column; gap: 8px; }
+.food-list { display: flex; flex-direction: column; gap: 8px; }
+.food-card { background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 9px; }
+.food-head { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.food-name { flex: 1; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.food-tier { font-family: var(--mono); font-size: 9px; font-weight: 700; color: var(--craft); flex-shrink: 0; }
+.food-nut { font-size: 10px; font-family: var(--mono); color: var(--dim); margin-bottom: 4px; }
+.food-buff { border-left: 2px solid var(--good); padding: 1px 0 1px 7px; margin-top: 4px; }
+.food-buff.bad { border-left-color: var(--bad); }
+.food-buff-name { font-size: 10.5px; font-weight: 600; color: var(--txt); }
+.food-nobuff { font-size: 10px; color: var(--dim2); font-style: italic; }
+
+/* ── skills tab ──────────────────────────────────────────────────── */
+.skills { display: flex; flex-direction: column; gap: 9px; }
+.sk-head { font-size: 10px; color: var(--dim2); font-family: var(--mono); padding: 2px 0 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.sk-head b { color: var(--good); }
+.sk-row { display: flex; flex-direction: column; gap: 4px; }
+.sk-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sk-name { font-size: 12px; font-weight: 600; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-lvl { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--craft); flex-shrink: 0; }
+.sk-sub { display: flex; justify-content: space-between; gap: 8px; font-size: 9.5px; font-family: var(--mono); color: var(--dim2); }
+.sk-rank { color: var(--accent); flex-shrink: 0; }
+
+/* ── gather-to-sell advisor ──────────────────────────────────────── */
+.ga-hero { margin-top: 4px; }
+.ga-list { display: flex; flex-direction: column; }
+.ga-row .cp-name { display: flex; align-items: center; gap: 5px; }
+.ga-tier { font-family: var(--mono); font-size: 8.5px; font-weight: 700; color: var(--craft); }
+.ga-right { gap: 7px; }
+.ga-price { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--craft); }
+.ga-dem { font-size: 9.5px; font-family: var(--mono); color: var(--good); }
+.ga-have { font-size: 9.5px; font-family: var(--mono); color: var(--dim2); }
+.ga-comp { font-size: 8.5px; font-family: var(--mono); color: var(--bad); }
+.ga-keep { font-size: 8.5px; font-family: var(--mono); color: var(--bad); }
+.ga-note { font-size: 9.5px; color: var(--dim2); padding: 9px 2px 2px; line-height: 1.35; }
+.ga-foot { display: flex; align-items: center; justify-content: space-between; padding: 7px 2px 2px; }
+.ga-fresh { font-size: 9.5px; color: var(--dim2); font-family: var(--mono); }
+.ga-refresh {
+  font-size: 10px; padding: 2px 9px; background: none; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 4px; color: var(--dim2); font-family: var(--mono);
+}
+.ga-refresh:hover { border-color: var(--accent); color: var(--accent); }
