@@ -127,7 +127,7 @@ body {
 .mode-toggle button {
   -webkit-appearance: none; flex: 1; background: none; border: none; cursor: pointer;
   font-family: var(--ui); font-weight: 600; color: var(--dim);
-  padding: 6px 8px; border-radius: 6px; font-size: 11.5px;
+  padding: 6px 8px; border-radius: 6px; font-size: 11.5px; white-space: nowrap;
 }
 .mode-toggle button:hover { color: var(--txt); }
 .mode-toggle button.on { background: var(--bg3); color: var(--txt); box-shadow: inset 0 0 0 1px var(--line); }
@@ -329,6 +329,10 @@ body {
 .food-head { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
 .food-name { flex: 1; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .food-tier { font-family: var(--mono); font-size: 9px; font-weight: 700; color: var(--craft); flex-shrink: 0; }
+.food-qty { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--txt); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; flex-shrink: 0; }
+.food-tiers { display: flex; flex-wrap: wrap; gap: 4px; }
+.food-tierbtn { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--dim); background: var(--bg2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; cursor: pointer; }
+.food-tierbtn.on { color: #fff; background: var(--accent); border-color: var(--accent); }
 .food-nut { font-size: 10px; font-family: var(--mono); color: var(--dim); margin-bottom: 4px; }
 .food-buff { border-left: 2px solid var(--good); padding: 1px 0 1px 7px; margin-top: 4px; }
 .food-buff.bad { border-left-color: var(--bad); }

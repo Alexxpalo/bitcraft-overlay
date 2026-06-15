@@ -15,6 +15,8 @@ let buffsData = null;  // null=idle, 'loading', 'noplayer', { buffs, isOnline }
 let skillsData = null; // null=idle, 'loading', 'noplayer', { rankings, totalPlayers, skillMap }
 let _foodResults = null;     // null=idle, 'loading', []=results
 let _foodSearchTimer = null; // debounce timer for the food search
+let _allFood = null;         // null=idle, 'loading', []=full food catalogue (for the in-storage default view)
+let _foodById = null;        // Map itemId -> food entry, built alongside _allFood
 let _levels = null;          // bundled XP thresholds [{level, xp}] (lazy-loaded)
 const _buffWarned = new Set();   // buffIds already warned this episode (re-armed when the buff disappears)
 const _craftTrack = new Map();   // craft entityId → { progress, changeTs, armed, warned }
@@ -29,12 +31,12 @@ const ACTIVE_STALE_MS = 5000;
 const BG_STALE_MS = 30000;
 // Members do N per-citizen player lookups per refresh; online status doesn't need
 // 5s granularity, so poll that tab less often to cut request volume.
-const STALE_OVERRIDE = { members: { active: 15000, bg: 60000 } };
+const STALE_OVERRIDE = { members: { active: 15000, bg: 60000 }, gatherrate: { active: 12000, bg: 15000 } };
 const activeStale = tab => STALE_OVERRIDE[tab]?.active || ACTIVE_STALE_MS;
 const bgStale     = tab => STALE_OVERRIDE[tab]?.bg     || BG_STALE_MS;
 function _poll(tab) {
   _lastPoll[tab] = Date.now();
-  ({ storage: pollStorage, chests: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks, buffs: pollBuffs, skills: pollSkills, claim: pollClaim })[tab]?.();
+  ({ storage: pollStorage, chests: pollStorage, builds: pollBuilds, jobs: pollJobs, members: pollMembers, tasks: pollTasks, buffs: pollBuffs, skills: pollSkills, claim: pollClaim, gatherrate: pollGatherRate })[tab]?.();
 }
 function _pollIfStale(tab, staleMs) {
   if (Date.now() - (_lastPoll[tab] || 0) > staleMs) _poll(tab);
@@ -307,6 +309,11 @@ async function pollStorage() {
   } catch(e) { console.error('storage poll:', e); }
   resolveChestNicknames();
   if (activeTab === 'storage' || activeTab === 'chests') renderTab(activeTab);
+  // The food browser's default view lists in-storage foods — keep it (and the
+  // held quantities) fresh too, touching only the list so the search caret survives.
+  else if (activeTab === 'buffs' && buffsMode === 'food') {
+    const l = document.getElementById('food-list'); if (l) l.innerHTML = foodListHtml();
+  }
 }
 
 async function pollBuilds() {
@@ -506,34 +513,77 @@ function renderFoodBrowser() {
   </div>`;
 }
 
-function foodListHtml() {
-  const q = (window._foodSearch || '').trim();
-  if (q.length < 2) return '<div class="hint">Type at least 2 letters to search food.</div>';
-  if (!Array.isArray(_foodResults)) return '<div class="hint">Searching…</div>';
-  if (!_foodResults.length) return '<div class="hint">No food found.</div>';
-  return _foodResults.map(f => {
-    const nut = [];
-    if (f.hunger) nut.push(`🍖 ${fmt(f.hunger)}`);
-    if (f.hp) nut.push(`♥ ${fmt(f.hp)}`);
-    if (f.stamina) nut.push(`⚡ ${fmt(f.stamina)}`);
-    const nutLine = nut.length ? `<div class="food-nut">${nut.join(' · ')}</div>` : '';
-    const buffs = (f.buffs || []).map(b => {
-      const st = fmtStats(b.stats);
-      return `<div class="food-buff ${b.beneficial ? 'good' : 'bad'}">
-        <span class="food-buff-name">${esc(b.buffName || 'Buff')}${b.duration ? ` · ${esc(fmtDur(b.duration))}` : ''}</span>
-        ${st ? `<div class="buff-stats">${st}</div>` : ''}
-      </div>`;
-    }).join('');
-    return `<div class="food-card">
-      <div class="food-head">
-        ${iconImg(f.iconAssetName, 'item-icon cp-icon')}
-        <span class="food-name" title="${esc(f.itemName || '')}">${esc(f.itemName || 'Food')}</span>
-        ${f.tier != null ? `<span class="food-tier">T${esc(f.tier)}</span>` : ''}
-      </div>
-      ${nutLine}
-      ${buffs || '<div class="food-nobuff">No buffs</div>'}
+// One food card. `qty`, when given, shows a "×N held" badge (storage view).
+function foodCardHtml(f, qty) {
+  const nut = [];
+  if (f.hunger) nut.push(`🍖 ${fmt(f.hunger)}`);
+  if (f.hp) nut.push(`♥ ${fmt(f.hp)}`);
+  if (f.stamina) nut.push(`⚡ ${fmt(f.stamina)}`);
+  const nutLine = nut.length ? `<div class="food-nut">${nut.join(' · ')}</div>` : '';
+  const buffs = (f.buffs || []).map(b => {
+    const st = fmtStats(b.stats);
+    return `<div class="food-buff ${b.beneficial ? 'good' : 'bad'}">
+      <span class="food-buff-name">${esc(b.buffName || 'Buff')}${b.duration ? ` · ${esc(fmtDur(b.duration))}` : ''}</span>
+      ${st ? `<div class="buff-stats">${st}</div>` : ''}
     </div>`;
   }).join('');
+  return `<div class="food-card">
+    <div class="food-head">
+      ${iconImg(f.iconAssetName, 'item-icon cp-icon')}
+      <span class="food-name" title="${esc(f.itemName || '')}">${esc(f.itemName || 'Food')}</span>
+      ${f.tier != null ? `<span class="food-tier">T${esc(f.tier)}</span>` : ''}
+      ${qty != null ? `<span class="food-qty">×${fmt(qty)}</span>` : ''}
+    </div>
+    ${nutLine}
+    ${buffs || '<div class="food-nobuff">No buffs</div>'}
+  </div>`;
+}
+
+// Full food catalogue (one call, no query → every food). Cached in-memory so the
+// in-storage view can match inventory item ids against known foods.
+async function ensureAllFood() {
+  if (_allFood === 'loading' || Array.isArray(_allFood)) return;
+  _allFood = 'loading';
+  try {
+    const j = await bitwasp('food');
+    const arr = j.food || [];
+    arr.forEach(f => saveIcon(String(f.itemId), f.iconAssetName));
+    _allFood = arr;
+    _foodById = new Map(arr.map(f => [String(f.itemId), f]));
+  } catch(e) { _allFood = []; _foodById = new Map(); }
+  if (activeTab === 'buffs' && buffsMode === 'food') {
+    const l = document.getElementById('food-list'); if (l) l.innerHTML = foodListHtml();
+  }
+}
+
+function foodListHtml() {
+  const q = (window._foodSearch || '').trim();
+  // Search mode: query the food catalogue by name (existing behaviour).
+  if (q.length >= 2) {
+    if (!Array.isArray(_foodResults)) return '<div class="hint">Searching…</div>';
+    if (!_foodResults.length) return '<div class="hint">No food found.</div>';
+    return _foodResults.map(f => foodCardHtml(f)).join('');
+  }
+  // Default (empty search): buff-giving foods currently in the settlement's storage.
+  if (allItems === null) return '<div class="hint">Loading inventory…</div>';
+  if (!Array.isArray(_allFood)) { ensureAllFood(); return '<div class="hint">Loading food data…</div>'; }
+  const inStock = allItems
+    .filter(it => it.qty > 0 && _foodById.has(String(it.id)))
+    .map(it => ({ f: _foodById.get(String(it.id)), qty: it.qty }))
+    .filter(c => (c.f.buffs || []).length > 0);   // only foods that actually grant a buff
+  if (!inStock.length) return '<div class="hint">No buff-giving food in your storage.</div>';
+  // Tier filter bar — only when more than one tier is in stock (else it's pointless).
+  const tiers = [...new Set(inStock.map(c => c.f.tier).filter(t => t != null))].sort((a, b) => a - b);
+  const sel = window._foodTier ?? null;
+  const bar = tiers.length > 1 ? '<div class="food-tiers">' +
+    `<button class="food-tierbtn ${sel == null ? 'on' : ''}" data-tier="all">All</button>` +
+    tiers.map(t => `<button class="food-tierbtn ${sel === t ? 'on' : ''}" data-tier="${t}">T${t}</button>`).join('') +
+    '</div>' : '';
+  const shown = (sel == null ? inStock : inStock.filter(c => c.f.tier === sel))
+    .sort((a, b) => (b.f.tier || 0) - (a.f.tier || 0) || b.qty - a.qty);
+  const cards = shown.length ? shown.map(({ f, qty }) => foodCardHtml(f, qty)).join('')
+    : `<div class="hint">No T${sel} food in storage.</div>`;
+  return bar + cards;
 }
 
 async function doFoodSearch(q) {
@@ -750,7 +800,7 @@ function updateBadges() {
 }
 
 function pollAll() {
-  for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'buffs', 'skills', 'claim']) _poll(tab);
+  for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'buffs', 'skills', 'claim', 'gatherrate']) _poll(tab);
 }
 
 // ─── Tab rendering ────────────────────────────────────────────────────────
@@ -780,9 +830,11 @@ function renderStorage() {
     <button class="${storageMode==='plan'?'on':''}" data-mode="plan">Craft plan</button>
     <button class="${storageMode==='items'?'on':''}" data-mode="items">All items</button>
     <button class="${storageMode==='gather'?'on':''}" data-mode="gather">Gather</button>
+    <button class="${storageMode==='rate'?'on':''}" data-mode="rate">Rate</button>
   </div>`;
   if (storageMode === 'plan') out += renderCraftPlan();
   else if (storageMode === 'items') out += renderAllItems();
+  else if (storageMode === 'rate') out += renderGatherRate();
   else out += renderGather();
   return out;
 }
@@ -911,14 +963,6 @@ function renderGather() {
   const { ranked, sellNow, ts } = gatherData;
   if (!ranked.length) return '<div class="hint">No gatherable resources have active buyers right now.</div><div class="ga-foot"><span></span><button class="ga-refresh">Refresh</button></div>';
   const icons = iconMap();
-  const top = ranked[0];
-  const hero = `<div class="nextup ga-hero">
-    <div class="nextup-tag">GATHER &amp; SELL</div>
-    <div class="nextup-body">
-      <div class="nextup-line">${iconImg(top.icon || icons[top.id], 'item-icon cp-icon')}<span class="nextup-item">${esc(top.name)}</span><span class="ga-tier">T${top.tier}</span></div>
-      <div class="nextup-sub">~◆<b>${fmtK(top.unit)}</b> each · <b>${fmt(top.guaranteed)}</b> wanted now · ◆<b>${fmtK(top.readyRevenue)}</b> ready</div>
-    </div>
-  </div>`;
   const rows = ranked.map(r => {
     const comp = r.price.availSell > r.guaranteed * 2 ? `<span class="ga-comp" title="Many sellers competing">⚠${fmtK(r.price.availSell)}</span>` : '';
     const keep = r.needed ? `<span class="ga-keep" title="Your craft plan still needs this">⚠ needed</span>` : '';
@@ -945,12 +989,184 @@ function renderGather() {
   const age = Math.max(0, Math.round((Date.now() - ts) / 60000));
   const note = '<div class="ga-note">Ranked by sell-revenue per effort — only resources with live buyers (so they sell). The API can’t show gather locations.</div>';
   const foot = `<div class="ga-foot"><span class="ga-fresh">prices ~${age}m old</span><button class="ga-refresh">Refresh</button></div>`;
-  return hero + '<div class="ga-list">' + rows + '</div>' + sellHtml + note + foot;
+  return '<div class="ga-list">' + rows + '</div>' + sellHtml + note + foot;
 }
 
 function bindGatherEvents() {
   const btn = document.querySelector('.ga-refresh');
   if (btn) btn.addEventListener('click', () => { if (!_gatherInFlight) buildGather(true); });
+}
+
+// ─── Gather-rate tracker (Storage sub-mode "Rate") ──────────────────────────
+// Samples the player's own inventory (carried + owned deployables) on a timer
+// and logs per-item positive deltas, so we can show how much of each resource
+// was gathered in the last 5/10/30/60 min. A session-level "gathering stopped"
+// notification fires when all raw gains go idle for a configurable gap.
+const GR_KEY = LS.gatherRate;
+const GR_WINDOWS = [5, 10, 30, 60];      // minutes (selector)
+const GR_RETAIN_MS = 60 * 60 * 1000;     // keep the last 60 min of gain events
+const GR_MAX_EVENTS = 1500;              // safety cap on the event log
+let _grInFlight = false;
+let _grState = null;                     // { playerId, startTs, lastTotals, events:[{ts,id,n}], online }
+let _grMeta = {};                        // id -> { name, tag, icon, type }; refreshed each poll (in-memory)
+let _grSession = { firstTs: 0, lastTs: 0, gained: {}, polls: 0, warned: false }; // current gathering episode
+let grView = { window: 30, rawsOnly: true };
+
+function grState() {
+  if (_grState) return _grState;
+  const s = safeParse(localStorage.getItem(GR_KEY), null) || { playerId: null, startTs: 0, lastTotals: {}, events: [], online: null };
+  const cut = Date.now() - GR_RETAIN_MS;
+  s.events = (s.events || []).filter(e => e.ts >= cut);
+  return (_grState = s);
+}
+function grSave() {
+  const s = _grState; if (!s) return;
+  const cut = Date.now() - GR_RETAIN_MS;
+  s.events = s.events.filter(e => e.ts >= cut);
+  if (s.events.length > GR_MAX_EVENTS) s.events = s.events.slice(-GR_MAX_EVENTS);
+  s.lastTotals = capMap(s.lastTotals, 2000);
+  localStorage.setItem(GR_KEY, JSON.stringify(s));
+}
+
+// Sum item quantities across the player's carried inventory + owned deployables
+// (carts). Shared claim banks are excluded so other members can't skew the count.
+function grContainerTotals(inv, playerId) {
+  const pid = String(playerId), totals = {};
+  for (const c of (inv.inventories || [])) {
+    const carried    = String(c.ownerEntityId) === pid && String(c.playerOwnerEntityId ?? '0') === '0';
+    const deployable = String(c.playerOwnerEntityId) === pid && c.buildingName == null;
+    if (!carried && !deployable) continue;
+    for (const p of (c.pockets || [])) {
+      const ct = p && p.contents; if (!ct || !ct.itemId) continue;
+      const k = String(ct.itemId); totals[k] = (totals[k] || 0) + (ct.quantity || 0);
+    }
+  }
+  return totals;
+}
+
+async function pollGatherRate() {
+  const reRender = () => { if (activeTab === 'storage' && storageMode === 'rate') renderTab('storage'); };
+  if (!localStorage.getItem(LS.tasksPlayer)) { reRender(); return; }
+  if (_grInFlight) return;
+  const id = await resolveTasksPlayerId();
+  if (!id) { reRender(); return; }
+  _grInFlight = true;
+  try {
+    const s = grState();
+    if (s.playerId !== id) { s.playerId = id; s.startTs = 0; s.lastTotals = {}; s.events = []; _grSession = { firstTs: 0, lastTs: 0, gained: {}, polls: 0, warned: false }; }
+    const j = await bitwasp('players/' + id + '/inventories');
+    // Embedded metadata join (items + cargos are itemId -> {name, tag, icon} maps).
+    for (const [iid, m] of Object.entries(j.items || {}))  { _grMeta[iid] = { name: m.name, tag: m.tag || '', icon: m.iconAssetName || '', type: 0 }; if (m.iconAssetName) saveIcon(iid, m.iconAssetName); if (m.name) _saveName(iid, m.name); }
+    for (const [iid, m] of Object.entries(j.cargos || {})) { _grMeta[iid] = { name: m.name, tag: m.tag || '', icon: m.iconAssetName || '', type: 1 }; if (m.iconAssetName) saveIcon(iid, m.iconAssetName); if (m.name) _saveName(iid, m.name); }
+    // Online: prefer a field on the response, else reuse the buffs poll's flag.
+    s.online = (j.signedIn != null) ? !!j.signedIn : ((buffsData && typeof buffsData === 'object') ? buffsData.isOnline : s.online);
+    const now = Date.now();
+    const cur = grContainerTotals(j, id);
+    const gap = now - (s.lastPollTs || 0);
+    s.lastPollTs = now;
+    // First poll ever, or resuming after a long gap (app closed/suspended/slept):
+    // re-seed the baseline without emitting phantom gains for unobserved changes.
+    if (!s.startTs || gap > 90000) {
+      if (!s.startTs) s.startTs = now;
+      s.lastTotals = cur;
+      _grSession = { firstTs: 0, lastTs: 0, gained: {}, polls: 0, warned: false };
+      grSave(); reRender(); return;
+    }
+    // Positive deltas → gain events; raw-tagged gains also drive the stall detector.
+    const rawGains = {};
+    for (const [k, q] of Object.entries(cur)) {
+      const prev = s.lastTotals[k] || 0;
+      if (q > prev) {
+        const n = q - prev;
+        s.events.push({ ts: now, id: k, n });
+        if (GATHER_TAGS.has(_grMeta[k]?.tag)) rawGains[k] = (rawGains[k] || 0) + n;
+      }
+    }
+    s.lastTotals = cur;
+    grStallCheck(rawGains, now);
+    grSave();
+    reRender();
+  } catch(e) { console.error('gather-rate poll:', e); }
+  finally { _grInFlight = false; }
+}
+
+// Session-level "gathering stopped" detector. Arms while raw resources flow in;
+// once they stop for the configured gap, fires one summary ping (then resets).
+function grStallCheck(rawGains, now) {
+  if (localStorage.getItem(LS.gatherNotify) === '0') return;
+  const gap = (Number(localStorage.getItem(LS.gatherStallSec)) || 60) * 1000;
+  const sess = _grSession;
+  if (Object.keys(rawGains).length) {
+    if (!sess.firstTs) { sess.firstTs = now; sess.gained = {}; sess.polls = 0; }
+    sess.lastTs = now; sess.warned = false; sess.polls += 1;
+    for (const [k, n] of Object.entries(rawGains)) sess.gained[k] = (sess.gained[k] || 0) + n;
+    return;
+  }
+  if (!sess.firstTs || sess.warned || now - sess.lastTs < gap) return;
+  const total = Object.values(sess.gained).reduce((a, b) => a + b, 0);
+  if (total < 2 || sess.polls < 2) { sess.firstTs = 0; return; } // ignore trivial one-off pickups
+  const parts = Object.entries(sess.gained).sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${fmt(n)} ${_grMeta[k]?.name || itemsMap[k] || ('#' + k)}`);
+  const summary = parts.slice(0, 4).join(', ') + (parts.length > 4 ? ', …' : '');
+  const dur = fmtDur(Math.max(0, (sess.lastTs - sess.firstTs) / 1000));
+  notify('Gathering stopped', `No gathering for ${Math.round(gap / 1000)}s — ${summary} (${dur})`);
+  sess.warned = true; sess.firstTs = 0; // reset episode; next gain starts a fresh summary
+}
+
+function grWindowQuery(minutes) {
+  const cut = Date.now() - minutes * 60000;
+  const agg = {};
+  for (const e of grState().events) if (e.ts >= cut) agg[e.id] = (agg[e.id] || 0) + e.n;
+  return Object.entries(agg).map(([id, gained]) => ({ id, gained }))
+    .sort((a, b) => b.gained - a.gained);
+}
+
+function renderGatherRate() {
+  if (!localStorage.getItem(LS.tasksPlayer)) return '<div class="hint">Set your player name in Settings to track gather rate.</div>';
+  const s = grState();
+  if (!s.startTs) { setTimeout(() => pollGatherRate(), 0); return '<div class="hint">Collecting… keep gathering.</div>'; }
+  const icons = iconMap();
+  const win = grView.window;
+  let rows = grWindowQuery(win);
+  if (grView.rawsOnly) rows = rows.filter(r => GATHER_TAGS.has(_grMeta[r.id]?.tag));
+  const winBar = '<div class="food-tiers">' + GR_WINDOWS.map(w =>
+    `<button class="food-tierbtn ${win === w ? 'on' : ''}" data-grwin="${w}">${w}m</button>`).join('') + '</div>';
+  const filtBar = '<div class="food-tiers">' +
+    `<button class="food-tierbtn ${grView.rawsOnly ? 'on' : ''}" data-grfilter="raws">Raws</button>` +
+    `<button class="food-tierbtn ${!grView.rawsOnly ? 'on' : ''}" data-grfilter="all">All</button>` + '</div>';
+  let body;
+  if (!rows.length) {
+    body = `<div class="hint">No gathering in the last ${win}m.</div>`;
+  } else {
+    const list = rows.map(r => {
+      const name = _grMeta[r.id]?.name || itemsMap[r.id] || ('#' + r.id);
+      const icon = _grMeta[r.id]?.icon || icons[r.id];
+      return `<div class="cp-row ga-row">
+        ${iconImg(icon, 'item-icon cp-icon')}
+        <span class="cp-name" title="${esc(name)}">${esc(name)}</span>
+        <span class="cp-right ga-right"><span class="ga-price">+${fmt(r.gained)}</span></span>
+      </div>`;
+    }).join('');
+    const total = rows.reduce((a, b) => a + b.gained, 0);
+    const totLine = `<div class="plan-divider">Total: ${fmt(total)} gathered in last ${win}m</div>`;
+    body = '<div class="ga-list">' + list + '</div>' + totLine;
+  }
+  const notes = [];
+  const elapsed = Date.now() - s.startTs;
+  if (elapsed < win * 60000) notes.push(`<div class="ga-note">Only ${fmtDur(elapsed / 1000)} tracked so far — the ${win}m window isn't full yet.</div>`);
+  if (s.online === false) notes.push('<div class="ga-note">Player offline — inventory not syncing; rate is static.</div>');
+  const foot = `<div class="ga-foot"><span class="ga-fresh">tracking ${fmtDur(elapsed / 1000)}</span><button class="ga-refresh gr-reset">Reset</button></div>`;
+  return winBar + filtBar + body + notes.join('') + foot;
+}
+
+function bindGatherRateEvents() {
+  const root = document.getElementById('tab-content');
+  if (!root) return;
+  root.querySelectorAll('[data-grwin]').forEach(b => b.addEventListener('click', () => { grView.window = Number(b.dataset.grwin); renderTab('storage'); }));
+  root.querySelectorAll('[data-grfilter]').forEach(b => b.addEventListener('click', () => { grView.rawsOnly = b.dataset.grfilter === 'raws'; renderTab('storage'); }));
+  const rst = root.querySelector('.gr-reset');
+  // Keep lastTotals so the next poll doesn't count the whole inventory as "gained".
+  if (rst) rst.addEventListener('click', () => { const s = grState(); s.startTs = Date.now(); s.events = []; _grSession = { firstTs: 0, lastTs: 0, gained: {}, polls: 0, warned: false }; grSave(); renderTab('storage'); });
 }
 
 function renderCraftPlan() {
@@ -1352,6 +1568,7 @@ function renderJobs() {
   }).join('') + '</div>';
 }
 
+let _tkCollapsed = new Set();   // NPC names whose task group is collapsed (in-memory, per session)
 function renderTasks() {
   const name = localStorage.getItem(LS.tasksPlayer) || '';
   const setRow = `<div class="tk-setrow">
@@ -1392,7 +1609,9 @@ function renderTasks() {
   const body = Object.keys(groups).sort((a, b) => a.localeCompare(b)).map(npc => {
     const list = groups[npc].sort((a, b) => (a.completed?1:0) - (b.completed?1:0));
     const ndone = list.filter(t => t.completed).length;
-    return `<div class="tk-npc">${esc(npc)}<span class="tk-npc-count">${ndone}/${list.length}</span></div>` + list.map(taskCard).join('');
+    const collapsed = _tkCollapsed.has(npc);
+    const header = `<div class="tk-npc" data-npc="${esc(npc)}"><span class="tk-npc-lbl"><span class="tk-caret">${collapsed ? '▸' : '▾'}</span>${esc(npc)}</span><span class="tk-npc-count">${ndone}/${list.length}</span></div>`;
+    return header + (collapsed ? '' : list.map(taskCard).join(''));
   }).join('');
   return setRow + head + '<div class="tasks">' + body + '</div>';
 }
@@ -1449,6 +1668,11 @@ function renderSettings() {
         <span class="settings-value">Stall threshold (s)</span>
         <input class="inp settings-inp settings-num" id="cfg-craft-stall" type="number" min="1" value="${esc(localStorage.getItem(LS.craftStallSec) || '5')}">
       </div>
+      <label class="settings-check"><input type="checkbox" id="cfg-gather-notify" ${localStorage.getItem(LS.gatherNotify) === '0' ? '' : 'checked'}> Notify when gathering stops</label>
+      <div class="settings-row">
+        <span class="settings-value">Idle threshold (s)</span>
+        <input class="inp settings-inp settings-num" id="cfg-gather-stall" type="number" min="15" value="${esc(localStorage.getItem(LS.gatherStallSec) || '60')}">
+      </div>
       <button class="settings-save" id="cfg-test-notify" style="margin-top:6px">Test notification</button>
     </div>
     <div class="settings-section">
@@ -1480,6 +1704,7 @@ function bindTabEvents(id) {
     if (storageMode === 'plan') bindGoalEvents();
     if (storageMode === 'items') bindAllItemsEvents();
     if (storageMode === 'gather') bindGatherEvents();
+    if (storageMode === 'rate') bindGatherRateEvents();
   }
   if (id === 'chests') resolveChestNicknames();
   if (id === 'buffs') {
@@ -1500,6 +1725,15 @@ function bindTabEvents(id) {
         inp.focus();
         const len = inp.value.length; inp.setSelectionRange(len, len);
       }
+      // Delegated tier-filter clicks. Bound on the stable #food-list element so it
+      // survives the innerHTML swaps done while typing / on storage polls.
+      const fl = document.getElementById('food-list');
+      if (fl) fl.addEventListener('click', e => {
+        const b = e.target.closest('.food-tierbtn');
+        if (!b) return;
+        window._foodTier = b.dataset.tier === 'all' ? null : Number(b.dataset.tier);
+        fl.innerHTML = foodListHtml();
+      });
     }
   }
   if (id === 'tasks') {
@@ -1522,6 +1756,15 @@ function bindTabEvents(id) {
     };
     if (btn) btn.addEventListener('click', apply);
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+    // Collapse/expand each NPC's task group.
+    document.querySelectorAll('.tk-npc').forEach(h => {
+      h.addEventListener('mousedown', e => e.stopPropagation());
+      h.addEventListener('click', () => {
+        const npc = h.dataset.npc;
+        if (_tkCollapsed.has(npc)) _tkCollapsed.delete(npc); else _tkCollapsed.add(npc);
+        renderTab('tasks');
+      });
+    });
   }
   if (id === 'settings') {
     const inp = document.getElementById('cfg-player');
@@ -1555,6 +1798,13 @@ function bindTabEvents(id) {
     if (craftStall) {
       craftStall.addEventListener('mousedown', e => e.stopPropagation());
       craftStall.addEventListener('change', () => localStorage.setItem(LS.craftStallSec, String(Math.max(1, parseInt(craftStall.value) || 5))));
+    }
+    const gatherChk = document.getElementById('cfg-gather-notify');
+    if (gatherChk) gatherChk.addEventListener('change', () => localStorage.setItem(LS.gatherNotify, gatherChk.checked ? '1' : '0'));
+    const gatherStall = document.getElementById('cfg-gather-stall');
+    if (gatherStall) {
+      gatherStall.addEventListener('mousedown', e => e.stopPropagation());
+      gatherStall.addEventListener('change', () => localStorage.setItem(LS.gatherStallSec, String(Math.max(15, parseInt(gatherStall.value) || 60))));
     }
     const testBtn = document.getElementById('cfg-test-notify');
     if (testBtn) testBtn.addEventListener('click', () => notify('BitCraft Overlay', 'Notifications are working'));
@@ -1711,7 +1961,7 @@ function startMain() {
   pollAll();
   setInterval(() => {
     _pollIfStale(activeTab, activeStale(activeTab));
-    for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'buffs', 'skills']) {
+    for (const tab of ['storage', 'builds', 'jobs', 'members', 'tasks', 'buffs', 'skills', 'gatherrate']) {
       if (tab !== activeTab) _pollIfStale(tab, bgStale(tab));
     }
     _pollIfStale('claim', BG_STALE_MS);

@@ -23,6 +23,9 @@ const LS = {
   scale:          'bc-scale',
   market:         'bc-market-v1',
   price:          'bc-price-v1',
+  gatherRate:     'bc-gather-rate-v1',
+  gatherNotify:   'bc-gather-notify',
+  gatherStallSec: 'bc-gather-stall-sec',
 };
 
 // Request queue: at most one request per 250 ms (~4 req/s ceiling). Identical
