@@ -9,7 +9,7 @@ const LS = {
   goals:          'bc-goals',
   iconsMap:       'bc-icons-map',
   itemsMap:       'bc-items-map',
-  nicknameMap:    'bc-nickname-map',
+  nicknameMap:    'bc-nickname-map-v2', // v2: flush negatives a transient API failure may have poisoned
   tasksPlayer:    'bc-tasks-player',
   tasksPlayerId:  'bc-tasks-player-id',
   buffNotify:     'bc-buff-notify',

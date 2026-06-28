@@ -94,7 +94,7 @@ function iconImg(asset, cls = 'item-icon') {
 
 // ─── Full recipe cache (craft planner) ───────────────────────────────────
 // { [id]: { name, tag, outputQty, ingredients:[{id,qty}] } | null }
-const RECIPE_KEY = 'bc-recipe-v3'; // v3: skip package-unpack recipes (invalidates old v2 cache)
+const RECIPE_KEY = 'bc-recipe-v4'; // v4: flush empty placeholders a transient API failure may have poisoned (v3: skip package-unpack recipes)
 let _recipeCache = null;
 function recipeCache() { return _recipeCache ?? (_recipeCache = JSON.parse(localStorage.getItem(RECIPE_KEY) || '{}')); }
 function saveRecipeEntry(id, val) {
@@ -151,8 +151,12 @@ async function resolveNicknameToItemId(nickname) {
         saveNickname(key, { itemId: id });
         return id;
       }
-    } catch(e) {}
-    saveNickname(key, { itemId: null });             // no match — stop retrying
+      // The API answered with no exact match → a genuine negative; cache it so we
+      // stop retrying. Crucially this is INSIDE the try: a transient bitwasp()
+      // rejection (network/IPC blip) falls to the catch and is NOT negative-cached,
+      // so the chest re-resolves next round instead of being hidden forever.
+      saveNickname(key, { itemId: null });
+    } catch(e) { /* transient failure — leave uncached so it retries */ }
     return null;
   })();
   _nickInFlight.set(key, p);
@@ -184,7 +188,9 @@ async function resolveChestNicknames() {
       const id = await resolveNicknameToItemId(c.nickname);
       if (!id) return;
       await ensureGoalTree(id, 0, visited);   // fetch the WHOLE recipe tree (names, icons, sub-recipes)
-      _chestTreeLoaded.add(id);
+      // Only mark loaded once the target's recipe is actually cached — a transient
+      // fetch failure isn't persisted, so leaving it unmarked lets it retry next round.
+      if (recipeCache()[id]) _chestTreeLoaded.add(id);
     }));
   } finally {
     _chestsResolveInFlight = false;
@@ -199,6 +205,7 @@ async function fetchRecipe(id) {
   if (id in cache) return cache[id];
   if (_recipeInFlight.has(id)) return _recipeInFlight.get(id);
   const p = (async () => {
+  let threw = false;   // an endpoint REJECTED (transient blip) rather than answering
   // Try items endpoint
   try {
     const j = await bitwasp(`items/${id}`);
@@ -233,7 +240,7 @@ async function fetchRecipe(id) {
       saveRecipeEntry(id, result);
       return result;
     }
-  } catch(e) {}
+  } catch(e) { threw = true; }
 
   // Try cargo endpoint as fallback
   try {
@@ -247,11 +254,15 @@ async function fetchRecipe(id) {
       saveRecipeEntry(id, result);
       return result;
     }
-  } catch(e) {}
+  } catch(e) { threw = true; }
 
-  // Unknown item — save placeholder so we stop retrying
+  // Both endpoints exhausted. If either REJECTED (transient blip), don't persist
+  // the empty placeholder — that would poison the recipe tree permanently (chest
+  // hidden / subtree collapsed to a base material until the cache version bumps).
+  // Return it un-cached so the next fetch retries. Only a genuine answered-but-
+  // unknown item (no throw) gets the negative cached to stop retrying.
   const fallback = { name: null, tag: '', outputQty: 1, ingredients: [] };
-  saveRecipeEntry(id, fallback);
+  if (!threw) saveRecipeEntry(id, fallback);
   return fallback;
   })();
   _recipeInFlight.set(id, p);
@@ -1404,7 +1415,14 @@ function renderChests() {
   if (!named.length) return '<div class="hint">No nicknamed chests. Name a chest after an item (e.g. "Rough Plank") in-game to track craft readiness.</div>';
   if (window._chestsLoading) return '<div class="hint">Resolving recipes…</div>';
 
-  const rc = recipeCache(), nc = nicknameCache(), icons = iconMap();
+  const rc = recipeCache(), nc = nicknameCache();
+  // Icon lookup: persisted icon map wins, but fall back to the live inventory icon
+  // (allItems[].icon) so a chest row never blanks out for an item whose iconMap
+  // entry was evicted — matches the storage Craft plan's `icons[id] || inv.icon`.
+  const icons = Object.assign(
+    Object.fromEntries((allItems || []).map(i => [String(i.id), i.icon])),
+    iconMap()
+  );
   const craftable = named.filter(c => {
     const id = nc[parseNickname(c.nickname).name.toLowerCase()]?.itemId;
     const r = id ? rc[id] : null;
@@ -1430,10 +1448,11 @@ function renderChestCard(chest, itemId, recipe, settle, icons, cache, mult = 1) 
   const ids = [...new Set([...Object.keys(needs), ...Object.keys(satisfied)])];
 
   const memo = {}, byStage = {};
+  const invTags = Object.fromEntries((allItems || []).map(i => [String(i.id), i.tag]));
   for (const id of ids) {
     const r = cache[id];
     const name = itemsMap[id] || r?.name || `Item ${String(id).slice(-6)}`;
-    const tag  = r?.tag || 'Other';
+    const tag  = invTags[id] || r?.tag || 'Other';  // live inventory tag first, mirrors the storage plan grouping
     const s = recipeDepth(id, cache, memo);
     ((byStage[s] ??= {})[tag] ??= []).push({ id, name });
   }
@@ -1455,9 +1474,12 @@ function renderChestCard(chest, itemId, recipe, settle, icons, cache, mult = 1) 
         if (needs[id] != null) {
           const need = needs[id] || 0;
           const inChest = chestInv[id] || 0, inSettle = settle[id] || 0;
+          // settle is settlement-wide and already includes THIS chest's copies, so
+          // only the remainder is actually movable in from elsewhere.
+          const movable = Math.max(0, inSettle - inChest);
           let state, chip = '';
           if (inChest >= need) state = 'here';
-          else if (inSettle >= need) { state = 'elsewhere'; anyElsewhere = true; chip = `<span class="ch-chip elsewhere">in storage ${fmt(inSettle)}</span>`; }
+          else if (inSettle >= need) { state = 'elsewhere'; anyElsewhere = true; chip = `<span class="ch-chip elsewhere">in storage ${fmt(movable)}</span>`; }
           else { state = 'missing'; anyMissing = true; chip = `<span class="ch-chip missing">missing ${fmt(need - inSettle)}</span>`; }
           right = `${chip}<span class="ch-need ${state}">${fmt(inChest)}/${fmt(need)}</span>`;
         } else {
@@ -1475,12 +1497,21 @@ function renderChestCard(chest, itemId, recipe, settle, icons, cache, mult = 1) 
     body += `<div class="cp-stage"><div class="cp-shd"><span>${esc(label)}</span><span class="cp-sbadge">${total} total</span></div>${inner}</div>`;
   }
 
+  // Finished goal items already staged in THIS chest. When the chest holds the
+  // whole goal, every ingredient is "covered" (grey) and the tree carries no
+  // visible reason — so surface the count and flag the card "Stocked" not "Ready".
+  const haveTarget = chestInv[String(itemId)] || 0;
+  const stocked = haveTarget >= mult;
   const status = anyMissing ? '<span class="ch-st missing">Missing materials</span>'
     : anyElsewhere ? '<span class="ch-st elsewhere">Move materials here</span>'
+    : stocked ? '<span class="ch-st here">Stocked ✓</span>'
     : '<span class="ch-st here">Ready to craft ✓</span>';
   const done = !anyMissing && !anyElsewhere ? ' ch-done' : '';
   const title = recipe.name || itemsMap[itemId] || parseNickname(chest.nickname).name;
   const multBadge = mult > 1 ? ` <span class="ch-mult">×${mult}</span>` : '';
+  const haveLine = haveTarget > 0
+    ? `<div class="ch-have">${fmt(haveTarget)}/${fmt(mult)} crafted in chest</div>`
+    : '';
   return `<div class="card ch-card${done}">
     <div class="card-head">
       ${iconImg(icons[itemId], 'item-icon cp-icon')}
@@ -1488,6 +1519,7 @@ function renderChestCard(chest, itemId, recipe, settle, icons, cache, mult = 1) 
       ${status}
     </div>
     <div class="ch-type">${esc(chest.typeName)}</div>
+    ${haveLine}
     ${body}
   </div>`;
 }
